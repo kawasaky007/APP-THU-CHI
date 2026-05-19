@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/config/app_constants.dart';
 import '../../../../core/models/models.dart';
 import '../../../../core/router/app_routes.dart';
+import '../../../../shared/formatters/currency_input_formatter.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../categories/presentation/providers/category_provider.dart';
 import '../../../categories/presentation/widgets/category_visuals.dart';
@@ -44,7 +44,9 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     _selectedCategoryId = transaction?.categoryId;
 
     if (transaction != null) {
-      _amountController.text = transaction.amount.round().toString();
+      _amountController.text = CurrencyInputFormatter.formatNumber(
+        transaction.amount,
+      );
       _noteController.text = transaction.note ?? '';
     }
   }
@@ -59,11 +61,17 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
-    final categoriesAsync = ref.watch(categoryListProvider);
     final actionState = ref.watch(transactionActionProvider);
 
-    final householdId = authState.profile?.householdId;
+    final householdId = ref.watch(currentHouseholdIdProvider);
     final userId = authState.user?.id ?? authState.profile?.id;
+    final categoriesAsync = householdId == null
+        ? const AsyncValue<List<Category>>.data([])
+        : ref.watch(categoriesStreamProvider(householdId));
+
+    debugPrint(
+      'ADD TRANSACTION REALTIME UI: householdId=$householdId userId=$userId',
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -71,8 +79,11 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
       ),
       body: categoriesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stackTrace) =>
-            _FormLoadError(onRetry: () => ref.invalidate(categoryListProvider)),
+        error: (error, stackTrace) => _FormLoadError(
+          onRetry: householdId == null
+              ? null
+              : () => ref.invalidate(categoriesStreamProvider(householdId)),
+        ),
         data: (categories) {
           final typedCategories = categories
               .where((category) => category.type == _type)
@@ -96,10 +107,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                   enabled: !actionState.isLoading,
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.next,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(12),
-                  ],
+                  inputFormatters: const [CurrencyInputFormatter()],
                   decoration: const InputDecoration(
                     labelText: 'Số tiền',
                     prefixIcon: Icon(Icons.payments_outlined),
@@ -140,30 +148,13 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                 const SizedBox(height: AppSpacing.md),
                 DropdownButtonFormField<String>(
                   key: ValueKey('${_type.value}-${selectedCategory?.id}'),
+                  isExpanded: true,
                   initialValue: selectedCategory?.id,
                   items: [
                     for (final category in typedCategories)
                       DropdownMenuItem(
                         value: category.id,
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 14,
-                              backgroundColor: CategoryVisuals.colorFromHex(
-                                category.color,
-                              ).withValues(alpha: 0.14),
-                              child: Icon(
-                                CategoryVisuals.iconFromName(category.icon),
-                                size: 16,
-                                color: CategoryVisuals.colorFromHex(
-                                  category.color,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.sm),
-                            Expanded(child: Text(category.name)),
-                          ],
-                        ),
+                        child: _CategoryDropdownLabel(category: category),
                       ),
                   ],
                   onChanged: actionState.isLoading
@@ -195,7 +186,11 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                     child: TextButton.icon(
                       onPressed: actionState.isLoading
                           ? null
-                          : () => context.push(AppRoutes.categories),
+                          : () {
+                              if (context.mounted) {
+                                context.push(AppRoutes.categories);
+                              }
+                            },
                       icon: const Icon(Icons.add),
                       label: const Text('Tạo danh mục'),
                     ),
@@ -275,7 +270,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     required String userId,
     required List<Category> categories,
   }) async {
-    if (!_formKey.currentState!.validate()) {
+    if (_formKey.currentState?.validate() != true) {
       return;
     }
     if (!mounted) {
@@ -328,7 +323,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   }
 
   double? _parseAmount(String value) {
-    final cleanValue = value.trim();
+    final cleanValue = CurrencyInputFormatter.digitsOnly(value);
     if (cleanValue.isEmpty) {
       return null;
     }
@@ -403,10 +398,45 @@ class _TransactionFormError extends StatelessWidget {
   }
 }
 
+class _CategoryDropdownLabel extends StatelessWidget {
+  const _CategoryDropdownLabel({required this.category});
+
+  final Category category;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = CategoryVisuals.colorFromHex(category.color);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(
+          radius: 14,
+          backgroundColor: color.withValues(alpha: 0.14),
+          child: Icon(
+            CategoryVisuals.iconFromName(category.icon),
+            size: 16,
+            color: color,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 220),
+          child: Text(
+            category.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _FormLoadError extends StatelessWidget {
   const _FormLoadError({required this.onRetry});
 
-  final VoidCallback onRetry;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {

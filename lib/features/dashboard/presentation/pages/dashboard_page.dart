@@ -10,7 +10,9 @@ import '../../../../core/router/app_routes.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../categories/presentation/providers/category_provider.dart';
 import '../../../categories/presentation/widgets/category_visuals.dart';
-import '../../../transactions/presentation/providers/transaction_provider.dart';
+import '../providers/dashboard_provider.dart';
+import '../providers/statistics_provider.dart';
+import '../providers/summary_provider.dart';
 
 class DashboardPage extends DashboardScreen {
   const DashboardPage({super.key});
@@ -28,90 +30,99 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final transactionsAsync = ref.watch(transactionListProvider);
-    final categoriesAsync = ref.watch(categoryListProvider);
-    final monthlyBudget = ref.watch(
-      authControllerProvider.select((state) => state.household?.monthlyBudget),
-    );
+    final authState = ref.watch(authControllerProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider);
+    final userId = authState.user?.id ?? authState.profile?.id;
+    final monthlyBudget = authState.household?.monthlyBudget;
 
-    final transactions = transactionsAsync.valueOrNull;
-    final categories = categoriesAsync.valueOrNull;
-
-    if (transactionsAsync.hasError && transactions == null) {
-      return _DashboardErrorView(
-        onRetry: () => ref.invalidate(transactionListProvider),
+    if (householdId == null) {
+      return const Scaffold(
+        body: Center(child: Text('Bạn chưa tham gia household nào.')),
       );
     }
 
-    if (categoriesAsync.hasError && categories == null) {
-      return _DashboardErrorView(
-        onRetry: () => ref.invalidate(categoryListProvider),
-      );
-    }
-
-    if (transactions == null || categories == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    final metrics = _DashboardMetrics.from(
-      transactions: transactions,
-      categories: categories,
-      chartType: _chartType,
+    debugPrint(
+      'DASHBOARD REALTIME UI: householdId=$householdId userId=$userId',
+    );
+    final transactionsAsync = ref.watch(
+      dashboardTransactionsProvider(householdId),
     );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tổng quan'),
-        actions: [
-          IconButton(
-            tooltip: 'Làm mới',
-            onPressed: () {
-              ref.invalidate(transactionListProvider);
-              ref.invalidate(categoryListProvider);
-            },
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
+    return transactionsAsync.when(
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (error, stackTrace) => _DashboardErrorView(
+        onRetry: () => ref.invalidate(dashboardTransactionsProvider(householdId)),
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(transactionListProvider);
-          ref.invalidate(categoryListProvider);
-        },
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
-            AppSpacing.sm,
-            AppSpacing.md,
-            AppSpacing.lg,
+      data: (transactions) {
+        debugPrint('DASHBOARD REALTIME TRANSACTIONS: ${transactions.length}');
+
+        final monthlyTransactions = ref.watch(
+          dashboardCurrentMonthTransactionsProvider(transactions),
+        );
+        final summary = ref.watch(
+          dashboardSummaryProvider(monthlyTransactions),
+        );
+        final categoriesAsync = ref.watch(categoriesStreamProvider(householdId));
+
+        return categoriesAsync.when(
+          loading: () =>
+              const Scaffold(body: Center(child: CircularProgressIndicator())),
+          error: (error, stackTrace) => _DashboardErrorView(
+            onRetry: () => ref.invalidate(categoriesStreamProvider(householdId)),
           ),
-          children: [
-            _BalanceHero(balance: metrics.balance),
-            const SizedBox(height: AppSpacing.md),
-            _MonthlySummaryRow(
-              income: metrics.monthlyIncome,
-              expense: metrics.monthlyExpense,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _BudgetProgressCard(
-              monthlyBudget: monthlyBudget,
-              monthlyExpense: metrics.monthlyExpense,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _CategoryPieCard(
-              chartType: _chartType,
-              items: metrics.chartItems,
-              total: metrics.chartTotal,
-              onTypeChanged: (type) => _setLocalState(() => _chartType = type),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            _RecentTransactionsSection(
-              transactions: metrics.recentTransactions,
-              categoriesById: metrics.categoriesById,
-            ),
-          ],
-        ),
-      ),
+          data: (categories) {
+            final statistics = ref.watch(
+              dashboardStatisticsProvider(
+                DashboardStatisticsInput(
+                  transactions: transactions,
+                  monthlyTransactions: monthlyTransactions,
+                  categories: categories,
+                  chartType: _chartType,
+                ),
+              ),
+            );
+
+            return Scaffold(
+              appBar: AppBar(title: const Text('Tổng quan')),
+              body: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                  AppSpacing.lg,
+                ),
+                children: [
+                  _BalanceHero(balance: summary.balance),
+                  const SizedBox(height: AppSpacing.md),
+                  _MonthlySummaryRow(
+                    income: summary.income,
+                    expense: summary.expense,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _BudgetProgressCard(
+                    monthlyBudget: monthlyBudget,
+                    monthlyExpense: summary.expense,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _CategoryPieCard(
+                    chartType: _chartType,
+                    items: statistics.chartItems,
+                    total: statistics.chartTotal,
+                    onTypeChanged: (type) =>
+                        _setLocalState(() => _chartType = type),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  _RecentTransactionsSection(
+                    transactions: statistics.recentTransactions,
+                    categoriesById: statistics.categoriesById,
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -153,7 +164,7 @@ class _BalanceHero extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            'Số dư hiện tại',
+            'Cân đối tháng này',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               color: colorScheme.onPrimaryContainer,
               fontWeight: FontWeight.w700,
@@ -315,7 +326,11 @@ class _BudgetProgressCard extends StatelessWidget {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => context.go(AppRoutes.profile),
+                  onPressed: () {
+                    if (context.mounted) {
+                      context.go(AppRoutes.profile);
+                    }
+                  },
                   child: Text(hasBudget ? 'Chỉnh' : 'Đặt'),
                 ),
               ],
@@ -394,7 +409,7 @@ class _CategoryPieCard extends StatelessWidget {
   });
 
   final TransactionType chartType;
-  final List<_CategoryShareItem> items;
+  final List<DashboardCategoryChartItem> items;
   final double total;
   final ValueChanged<TransactionType> onTypeChanged;
 
@@ -501,7 +516,7 @@ class _CategoryPieCard extends StatelessWidget {
 class _ChartLegend extends StatelessWidget {
   _ChartLegend({required this.items, required this.total});
 
-  final List<_CategoryShareItem> items;
+  final List<DashboardCategoryChartItem> items;
   final double total;
   final _currencyFormat = NumberFormat.currency(
     locale: 'vi_VN',
@@ -617,7 +632,11 @@ class _RecentTransactionsSection extends StatelessWidget {
               ),
             ),
             TextButton(
-              onPressed: () => context.go(AppRoutes.transactions),
+              onPressed: () {
+                if (context.mounted) {
+                  context.go(AppRoutes.transactions);
+                }
+              },
               child: const Text('Xem tất cả'),
             ),
           ],
@@ -701,7 +720,11 @@ class _EmptyRecentTransactions extends StatelessWidget {
           const Text('Chưa có giao dịch nào'),
           const SizedBox(height: AppSpacing.sm),
           FilledButton.icon(
-            onPressed: () => context.push(AppRoutes.addTransaction),
+            onPressed: () {
+              if (context.mounted) {
+                context.push(AppRoutes.addTransaction);
+              }
+            },
             icon: const Icon(Icons.add),
             label: const Text('Thêm giao dịch'),
           ),
@@ -744,135 +767,4 @@ class _DashboardErrorView extends StatelessWidget {
       ),
     );
   }
-}
-
-class _DashboardMetrics {
-  const _DashboardMetrics({
-    required this.balance,
-    required this.monthlyIncome,
-    required this.monthlyExpense,
-    required this.recentTransactions,
-    required this.chartItems,
-    required this.chartTotal,
-    required this.categoriesById,
-  });
-
-  final double balance;
-  final double monthlyIncome;
-  final double monthlyExpense;
-  final List<Transaction> recentTransactions;
-  final List<_CategoryShareItem> chartItems;
-  final double chartTotal;
-  final Map<String, Category> categoriesById;
-
-  factory _DashboardMetrics.from({
-    required List<Transaction> transactions,
-    required List<Category> categories,
-    required TransactionType chartType,
-  }) {
-    final categoriesById = {
-      for (final category in categories) category.id: category,
-    };
-
-    final now = DateTime.now();
-    final monthlyTransactions = transactions.where((transaction) {
-      final date = transaction.transactionDate;
-      return date.year == now.year && date.month == now.month;
-    }).toList();
-
-    var balance = 0.0;
-    for (final transaction in transactions) {
-      balance += transaction.type == TransactionType.income
-          ? transaction.amount
-          : -transaction.amount;
-    }
-
-    final monthlyIncome = _sumByType(
-      monthlyTransactions,
-      TransactionType.income,
-    );
-    final monthlyExpense = _sumByType(
-      monthlyTransactions,
-      TransactionType.expense,
-    );
-
-    final recentTransactions = [...transactions]
-      ..sort(_compareTransactionNewestFirst);
-
-    final categoryTotals = <String, double>{};
-    for (final transaction in monthlyTransactions) {
-      if (transaction.type != chartType) {
-        continue;
-      }
-      categoryTotals.update(
-        transaction.categoryId,
-        (value) => value + transaction.amount,
-        ifAbsent: () => transaction.amount,
-      );
-    }
-
-    final chartTotal = categoryTotals.values.fold<double>(
-      0,
-      (total, value) => total + value,
-    );
-
-    final chartItems = categoryTotals.entries.map((entry) {
-      final category = categoriesById[entry.key];
-      final color = category == null
-          ? CategoryVisuals.toneForType(chartType)
-          : CategoryVisuals.colorFromHex(category.color);
-
-      return _CategoryShareItem(
-        name: category?.name ?? 'Danh mục đã xóa',
-        value: entry.value,
-        color: color,
-        percent: chartTotal == 0 ? 0 : entry.value / chartTotal,
-      );
-    }).toList()..sort((a, b) => b.value.compareTo(a.value));
-
-    return _DashboardMetrics(
-      balance: balance,
-      monthlyIncome: monthlyIncome,
-      monthlyExpense: monthlyExpense,
-      recentTransactions: recentTransactions.take(5).toList(),
-      chartItems: chartItems,
-      chartTotal: chartTotal,
-      categoriesById: categoriesById,
-    );
-  }
-}
-
-class _CategoryShareItem {
-  const _CategoryShareItem({
-    required this.name,
-    required this.value,
-    required this.color,
-    required this.percent,
-  });
-
-  final String name;
-  final double value;
-  final Color color;
-  final double percent;
-}
-
-double _sumByType(List<Transaction> transactions, TransactionType type) {
-  return transactions
-      .where((transaction) => transaction.type == type)
-      .fold<double>(0, (total, transaction) => total + transaction.amount);
-}
-
-int _compareTransactionNewestFirst(Transaction a, Transaction b) {
-  final dateCompare = b.transactionDate.compareTo(a.transactionDate);
-  if (dateCompare != 0) {
-    return dateCompare;
-  }
-
-  final createdAtA = a.createdAt;
-  final createdAtB = b.createdAt;
-  if (createdAtA != null && createdAtB != null) {
-    return createdAtB.compareTo(createdAtA);
-  }
-
-  return b.id.compareTo(a.id);
 }

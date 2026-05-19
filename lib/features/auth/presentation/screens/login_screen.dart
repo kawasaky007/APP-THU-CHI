@@ -98,7 +98,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             TextButton(
               onPressed: authState.isLoading
                   ? null
-                  : () => context.go(AppRoutes.register),
+                  : () {
+                      if (context.mounted) {
+                        context.go(AppRoutes.register);
+                      }
+                    },
               child: const Text('Chưa có tài khoản? Đăng ký'),
             ),
           ],
@@ -108,7 +112,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) {
+    if (_formKey.currentState?.validate() != true) {
       return;
     }
     if (!mounted) {

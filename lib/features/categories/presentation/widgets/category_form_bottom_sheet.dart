@@ -88,7 +88,11 @@ class _CategoryFormBottomSheetState
                       tooltip: 'Đóng',
                       onPressed: actionState.isLoading
                           ? null
-                          : () => Navigator.of(context).pop(),
+                          : () {
+                              if (context.mounted) {
+                                Navigator.of(context).pop();
+                              }
+                            },
                       icon: const Icon(Icons.close),
                     ),
                   ],
@@ -209,7 +213,7 @@ class _CategoryFormBottomSheetState
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) {
+    if (_formKey.currentState?.validate() != true) {
       return;
     }
     if (!mounted) {

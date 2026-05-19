@@ -21,8 +21,14 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authControllerProvider);
     final householdId = ref.watch(currentHouseholdIdProvider);
-    final categoriesAsync = ref.watch(categoryListProvider);
+    final userId = authState.user?.id ?? authState.profile?.id;
+    final categoriesAsync = householdId == null
+        ? const AsyncValue<List<Category>>.data([])
+        : ref.watch(categoriesStreamProvider(householdId));
+
+    debugPrint('CATEGORY REALTIME UI: householdId=$householdId userId=$userId');
 
     return Scaffold(
       appBar: AppBar(title: const Text('Danh mục thu/chi')),
@@ -46,7 +52,8 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
               error: (error, stackTrace) {
                 return _CategoryErrorView(
                   message: 'Không thể tải danh mục. Vui lòng thử lại.',
-                  onRetry: () => ref.invalidate(categoryListProvider),
+                  onRetry: () =>
+                      ref.invalidate(categoriesStreamProvider(householdId)),
                 );
               },
               data: (categories) {
@@ -55,7 +62,7 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
                     .toList();
 
                 return RefreshIndicator(
-                  onRefresh: _refresh,
+                  onRefresh: () => _refresh(householdId),
                   child: ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(0, 0, 0, 96),
@@ -140,8 +147,8 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
     );
   }
 
-  Future<void> _refresh() async {
-    ref.invalidate(categoryListProvider);
+  Future<void> _refresh(String householdId) async {
+    ref.invalidate(categoriesStreamProvider(householdId));
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 

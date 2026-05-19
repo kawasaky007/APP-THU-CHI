@@ -89,10 +89,6 @@ class AppFeedback {
 
   static void handleFlutterError(FlutterErrorDetails details) {
     FlutterError.presentError(details);
-    showSnackBar(
-      'Ứng dụng gặp lỗi giao diện. Vui lòng thử lại.',
-      isError: true,
-    );
   }
 
   static bool handlePlatformError(Object error, StackTrace stackTrace) {
@@ -100,13 +96,6 @@ class AppFeedback {
       debugPrint('Unhandled platform error: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
-
-    unawaited(
-      showErrorDialog(
-        title: 'Lỗi hệ thống',
-        message: 'Ứng dụng gặp lỗi ngoài dự kiến. Vui lòng thử lại.',
-      ),
-    );
     return true;
   }
 }
@@ -121,17 +110,23 @@ class GlobalAppFeedback extends ConsumerStatefulWidget {
 }
 
 class _GlobalAppFeedbackState extends ConsumerState<GlobalAppFeedback> {
+  late final ProviderSubscription<SupabaseService> _serviceSubscription;
   SupabaseService? _service;
   SupabaseServiceException? _lastServiceError;
 
   @override
   void initState() {
     super.initState();
-    _attachService(ref.read(supabaseServiceProvider));
+    _serviceSubscription = ref.listenManual<SupabaseService>(
+      supabaseServiceProvider,
+      (previous, next) => _attachService(next),
+      fireImmediately: true,
+    );
   }
 
   @override
   void dispose() {
+    _serviceSubscription.close();
     _detachService();
     super.dispose();
   }

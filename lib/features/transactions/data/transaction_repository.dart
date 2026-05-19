@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' hide Category;
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import 'package:uuid/uuid.dart';
 
@@ -13,13 +14,24 @@ class TransactionRepository {
   supabase.SupabaseClient get _client => _supabaseService.client;
 
   Stream<List<Transaction>> watchTransactions(String householdId) {
+    debugPrint('WATCH TRANSACTIONS STARTED: $householdId');
+
     return _client
         .from(SupabaseTables.transactions)
         .stream(primaryKey: ['id'])
         .eq('household_id', householdId)
         .order('transaction_date', ascending: false)
         .asyncMap((rows) {
-          final transactions = rows.map(Transaction.fromJson).toList();
+          final deduplicatedRows = _dedupeRowsById(
+            rows,
+            entityName: 'TRANSACTIONS',
+          );
+          debugPrint(
+            'TRANSACTIONS REALTIME UPDATE: ${deduplicatedRows.length}',
+          );
+          final transactions = deduplicatedRows
+              .map(Transaction.fromJson)
+              .toList();
           transactions.sort(_compareTransaction);
           return transactions;
         });
@@ -289,6 +301,34 @@ int _compareTransaction(Transaction a, Transaction b) {
   }
 
   return b.id.compareTo(a.id);
+}
+
+List<Map<String, dynamic>> _dedupeRowsById(
+  Iterable<Map<String, dynamic>> rows, {
+  required String entityName,
+}) {
+  final latestRowsById = <String, Map<String, dynamic>>{};
+  final rowsWithoutId = <Map<String, dynamic>>[];
+
+  for (final row in rows) {
+    final rawId = row['id'];
+    final id = rawId is String ? rawId : rawId?.toString();
+    if (id == null || id.isEmpty) {
+      rowsWithoutId.add(row);
+      continue;
+    }
+    latestRowsById[id] = row;
+  }
+
+  final deduplicatedRows = [...latestRowsById.values, ...rowsWithoutId];
+  final duplicateCount = rows.length - deduplicatedRows.length;
+  if (duplicateCount > 0) {
+    debugPrint(
+      '$entityName REALTIME DEDUPED: removed=$duplicateCount before=${rows.length} after=${deduplicatedRows.length}',
+    );
+  }
+
+  return deduplicatedRows;
 }
 
 Map<String, dynamic> _asJsonMap(Object? value) {

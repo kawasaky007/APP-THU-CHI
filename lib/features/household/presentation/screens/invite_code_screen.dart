@@ -75,7 +75,11 @@ class _InviteCodeScreenState extends ConsumerState<InviteCodeScreen> {
             OutlinedButton.icon(
               onPressed: authState.isLoading
                   ? null
-                  : () => context.go(AppRoutes.createHousehold),
+                  : () {
+                      if (context.mounted) {
+                        context.go(AppRoutes.createHousehold);
+                      }
+                    },
               icon: const Icon(Icons.add_home_outlined),
               label: const Text('Tạo household mới'),
             ),
@@ -93,7 +97,7 @@ class _InviteCodeScreenState extends ConsumerState<InviteCodeScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) {
+    if (_formKey.currentState?.validate() != true) {
       return;
     }
     if (!mounted) {

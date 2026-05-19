@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/config/app_constants.dart';
 import '../../../../core/router/app_routes.dart';
+import '../../../../shared/formatters/currency_input_formatter.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/auth_screen_layout.dart';
 
@@ -72,7 +72,7 @@ class _CreateHouseholdScreenState extends ConsumerState<CreateHouseholdScreen> {
               controller: _budgetController,
               enabled: !authState.isLoading,
               keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              inputFormatters: const [CurrencyInputFormatter()],
               textInputAction: TextInputAction.done,
               decoration: const InputDecoration(
                 labelText: 'Ngân sách tháng',
@@ -98,7 +98,11 @@ class _CreateHouseholdScreenState extends ConsumerState<CreateHouseholdScreen> {
             OutlinedButton.icon(
               onPressed: authState.isLoading
                   ? null
-                  : () => context.go(AppRoutes.inviteCode),
+                  : () {
+                      if (context.mounted) {
+                        context.go(AppRoutes.inviteCode);
+                      }
+                    },
               icon: const Icon(Icons.group_add_outlined),
               label: const Text('Tôi có mã mời'),
             ),
@@ -116,7 +120,7 @@ class _CreateHouseholdScreenState extends ConsumerState<CreateHouseholdScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) {
+    if (_formKey.currentState?.validate() != true) {
       return;
     }
     if (!mounted) {
@@ -140,7 +144,7 @@ class _CreateHouseholdScreenState extends ConsumerState<CreateHouseholdScreen> {
   }
 
   int _parseBudget(String value) {
-    final digitsOnly = value.replaceAll(RegExp(r'\D'), '');
+    final digitsOnly = CurrencyInputFormatter.digitsOnly(value);
     return int.tryParse(digitsOnly) ?? 0;
   }
 }

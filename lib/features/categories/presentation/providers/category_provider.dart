@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' hide Category;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/models.dart';
@@ -9,15 +10,24 @@ final categoryRepositoryProvider = Provider<CategoryRepository>((ref) {
   return CategoryRepository(ref.watch(supabaseServiceProvider));
 });
 
-final categoryListProvider = StreamProvider.autoDispose<List<Category>>((ref) {
-  final householdId = ref.watch(currentHouseholdIdProvider);
+final categoriesStreamProvider = StreamProvider.autoDispose
+    .family<List<Category>, String>((ref, householdId) {
+      final userId = ref.watch(
+        authControllerProvider.select(
+          (state) => state.user?.id ?? state.profile?.id,
+        ),
+      );
+      debugPrint(
+        'CATEGORIES STREAM PROVIDER SUBSCRIBED: householdId=$householdId userId=$userId',
+      );
+      ref.onDispose(
+        () => debugPrint(
+          'CATEGORIES STREAM PROVIDER DISPOSED: householdId=$householdId',
+        ),
+      );
 
-  if (householdId == null) {
-    return Stream.value(const []);
-  }
-
-  return ref.watch(categoryRepositoryProvider).watchCategories(householdId);
-});
+      return ref.watch(categoryRepositoryProvider).watchCategories(householdId);
+    });
 
 final categoryActionProvider =
     StateNotifierProvider<CategoryActionController, CategoryActionState>((ref) {
@@ -111,7 +121,6 @@ class CategoryActionController extends StateNotifier<CategoryActionState> {
         return false;
       }
       _setState(const CategoryActionState());
-      _ref.invalidate(categoryListProvider);
       return true;
     } catch (error) {
       _setState(CategoryActionState(errorMessage: _errorMessage(error)));

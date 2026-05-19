@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' hide Category;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/models.dart';
@@ -9,19 +10,26 @@ final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
   return TransactionRepository(ref.watch(supabaseServiceProvider));
 });
 
-final transactionListProvider = StreamProvider.autoDispose<List<Transaction>>((
-  ref,
-) {
-  final householdId = ref.watch(currentHouseholdIdProvider);
+final transactionsStreamProvider = StreamProvider.autoDispose
+    .family<List<Transaction>, String>((ref, householdId) {
+      final userId = ref.watch(
+        authControllerProvider.select(
+          (state) => state.user?.id ?? state.profile?.id,
+        ),
+      );
+      debugPrint(
+        'TRANSACTIONS STREAM PROVIDER SUBSCRIBED: householdId=$householdId userId=$userId',
+      );
+      ref.onDispose(
+        () => debugPrint(
+          'TRANSACTIONS STREAM PROVIDER DISPOSED: householdId=$householdId',
+        ),
+      );
 
-  if (householdId == null) {
-    return Stream.value(const []);
-  }
-
-  return ref
-      .watch(transactionRepositoryProvider)
-      .watchTransactions(householdId);
-});
+      return ref
+          .watch(transactionRepositoryProvider)
+          .watchTransactions(householdId);
+    });
 
 final transactionActionProvider =
     StateNotifierProvider<TransactionActionController, TransactionActionState>((
@@ -29,7 +37,6 @@ final transactionActionProvider =
     ) {
       return TransactionActionController(
         repository: ref.watch(transactionRepositoryProvider),
-        ref: ref,
       );
     });
 
@@ -42,15 +49,11 @@ class TransactionActionState {
 
 class TransactionActionController
     extends StateNotifier<TransactionActionState> {
-  TransactionActionController({
-    required TransactionRepository repository,
-    required Ref ref,
-  }) : _repository = repository,
-       _ref = ref,
-       super(const TransactionActionState());
+  TransactionActionController({required TransactionRepository repository})
+    : _repository = repository,
+      super(const TransactionActionState());
 
   final TransactionRepository _repository;
-  final Ref _ref;
 
   Future<bool> createTransaction({
     required String householdId,
@@ -111,7 +114,6 @@ class TransactionActionController
         return false;
       }
       _setState(const TransactionActionState());
-      _ref.invalidate(transactionListProvider);
       return true;
     } catch (error) {
       _setState(TransactionActionState(errorMessage: _errorMessage(error)));

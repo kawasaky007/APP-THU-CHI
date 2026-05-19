@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/config/app_constants.dart';
 import '../../../../core/models/models.dart';
+import '../../../../shared/formatters/currency_input_formatter.dart';
 import '../../../../shared/widgets/app_feedback.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 
@@ -127,68 +128,10 @@ class ProfileScreen extends ConsumerWidget {
     BuildContext context,
     String currentName,
   ) async {
-    final controller = TextEditingController(text: currentName);
-    String? errorText;
-
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (dialogContext) {
-          return StatefulBuilder(
-            builder: (context, setDialogState) {
-              void submit() {
-                final validationError = _validateHouseholdName(controller.text);
-                if (validationError != null) {
-                  setDialogState(() => errorText = validationError);
-                  return;
-                }
-
-                Navigator.of(
-                  dialogContext,
-                ).pop(_normalizeHouseholdName(controller.text));
-              }
-
-              return AlertDialog(
-                title: const Text('Đổi tên household'),
-                content: TextField(
-                  controller: controller,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.words,
-                  inputFormatters: [
-                    LengthLimitingTextInputFormatter(60),
-                    FilteringTextInputFormatter.deny(RegExp(r'^\s+')),
-                  ],
-                  decoration: InputDecoration(
-                    labelText: 'Tên household',
-                    prefixIcon: const Icon(Icons.home_outlined),
-                    errorText: errorText,
-                  ),
-                  onChanged: (_) {
-                    if (errorText != null) {
-                      setDialogState(() => errorText = null);
-                    }
-                  },
-                  onSubmitted: (_) => submit(),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: const Text('Hủy'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: submit,
-                    icon: const Icon(Icons.save_outlined),
-                    label: const Text('Lưu'),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
-    }
+    return showDialog<String>(
+      context: context,
+      builder: (_) => _RenameHouseholdDialog(currentName: currentName),
+    );
   }
 
   Future<void> _updateMonthlyBudget(
@@ -232,53 +175,10 @@ class ProfileScreen extends ConsumerWidget {
     BuildContext context,
     int? currentBudget,
   ) async {
-    final controller = TextEditingController(
-      text: currentBudget == null ? '' : currentBudget.toString(),
+    return showDialog<int>(
+      context: context,
+      builder: (_) => _MonthlyBudgetDialog(currentBudget: currentBudget),
     );
-
-    try {
-      return await showDialog<int>(
-        context: context,
-        builder: (dialogContext) {
-          void submit() {
-            Navigator.of(dialogContext).pop(_parseBudget(controller.text));
-          }
-
-          return AlertDialog(
-            title: const Text('Cập nhật ngân sách tháng'),
-            content: TextFormField(
-              controller: controller,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              textInputAction: TextInputAction.done,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(12),
-              ],
-              decoration: const InputDecoration(
-                labelText: 'Ngân sách tháng',
-                prefixIcon: Icon(Icons.savings_outlined),
-                suffixText: 'đ',
-              ),
-              onFieldSubmitted: (_) => submit(),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Hủy'),
-              ),
-              FilledButton.icon(
-                onPressed: submit,
-                icon: const Icon(Icons.save_outlined),
-                label: const Text('Lưu'),
-              ),
-            ],
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
-    }
   }
 
   Future<void> _leaveHousehold(
@@ -426,6 +326,163 @@ class ProfileScreen extends ConsumerWidget {
         return;
       }
       await ref.read(authControllerProvider.notifier).logout();
+    }
+  }
+}
+
+class _RenameHouseholdDialog extends StatefulWidget {
+  const _RenameHouseholdDialog({required this.currentName});
+
+  final String currentName;
+
+  @override
+  State<_RenameHouseholdDialog> createState() => _RenameHouseholdDialogState();
+}
+
+class _RenameHouseholdDialogState extends State<_RenameHouseholdDialog> {
+  late final TextEditingController _controller;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.currentName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Đổi tên household'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textCapitalization: TextCapitalization.words,
+        inputFormatters: [
+          LengthLimitingTextInputFormatter(60),
+          FilteringTextInputFormatter.deny(RegExp(r'^\s+')),
+        ],
+        decoration: InputDecoration(
+          labelText: 'Tên household',
+          prefixIcon: const Icon(Icons.home_outlined),
+          errorText: _errorText,
+        ),
+        onChanged: (_) {
+          if (_errorText != null) {
+            _setLocalState(() => _errorText = null);
+          }
+        },
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            if (mounted) {
+              Navigator.of(context).pop();
+            }
+          },
+          child: const Text('Hủy'),
+        ),
+        FilledButton.icon(
+          onPressed: _submit,
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Lưu'),
+        ),
+      ],
+    );
+  }
+
+  void _submit() {
+    final validationError = _validateHouseholdName(_controller.text);
+    if (validationError != null) {
+      _setLocalState(() => _errorText = validationError);
+      return;
+    }
+
+    if (mounted) {
+      Navigator.of(context).pop(_normalizeHouseholdName(_controller.text));
+    }
+  }
+
+  void _setLocalState(VoidCallback update) {
+    if (!mounted) {
+      return;
+    }
+    setState(update);
+  }
+}
+
+class _MonthlyBudgetDialog extends StatefulWidget {
+  const _MonthlyBudgetDialog({required this.currentBudget});
+
+  final int? currentBudget;
+
+  @override
+  State<_MonthlyBudgetDialog> createState() => _MonthlyBudgetDialogState();
+}
+
+class _MonthlyBudgetDialogState extends State<_MonthlyBudgetDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.currentBudget == null
+          ? ''
+          : CurrencyInputFormatter.formatNumber(widget.currentBudget!),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Cập nhật ngân sách tháng'),
+      content: TextFormField(
+        controller: _controller,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.done,
+        inputFormatters: const [CurrencyInputFormatter()],
+        decoration: const InputDecoration(
+          labelText: 'Ngân sách tháng',
+          prefixIcon: Icon(Icons.savings_outlined),
+          suffixText: 'đ',
+        ),
+        onFieldSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            if (mounted) {
+              Navigator.of(context).pop();
+            }
+          },
+          child: const Text('Hủy'),
+        ),
+        FilledButton.icon(
+          onPressed: _submit,
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Lưu'),
+        ),
+      ],
+    );
+  }
+
+  void _submit() {
+    if (mounted) {
+      Navigator.of(context).pop(_parseBudget(_controller.text));
     }
   }
 }
@@ -784,7 +841,7 @@ String _normalizeHouseholdName(String value) {
 }
 
 int _parseBudget(String value) {
-  final digitsOnly = value.replaceAll(RegExp(r'\D'), '');
+  final digitsOnly = CurrencyInputFormatter.digitsOnly(value);
   return int.tryParse(digitsOnly) ?? 0;
 }
 

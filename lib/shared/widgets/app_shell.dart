@@ -45,7 +45,11 @@ class AppShell extends StatelessWidget {
       floatingActionButton: _showQuickAddButton
           ? FloatingActionButton.extended(
               tooltip: 'Thêm giao dịch nhanh',
-              onPressed: () => context.push(AppRoutes.addTransaction),
+              onPressed: () {
+                if (context.mounted) {
+                  context.push(AppRoutes.addTransaction);
+                }
+              },
               icon: const Icon(Icons.add),
               label: const Text('Thêm'),
             )
@@ -54,7 +58,7 @@ class AppShell extends StatelessWidget {
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) {
           final nextPath = _tabs[index].path;
-          if (nextPath != currentPath) {
+          if (nextPath != currentPath && context.mounted) {
             context.go(nextPath);
           }
         },

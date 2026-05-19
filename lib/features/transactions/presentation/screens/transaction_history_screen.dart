@@ -7,6 +7,7 @@ import '../../../../core/config/app_constants.dart';
 import '../../../../core/models/models.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../shared/widgets/app_feedback.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../categories/presentation/providers/category_provider.dart';
 import '../../../categories/presentation/widgets/category_visuals.dart';
 import '../providers/transaction_provider.dart';
@@ -49,8 +50,21 @@ class _TransactionHistoryScreenState
 
   @override
   Widget build(BuildContext context) {
-    final transactionsAsync = ref.watch(transactionListProvider);
-    final categoriesAsync = ref.watch(categoryListProvider);
+    final authState = ref.watch(authControllerProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider);
+    final userId = authState.user?.id ?? authState.profile?.id;
+
+    if (householdId == null) {
+      return const Scaffold(
+        body: Center(child: Text('Bạn chưa tham gia household nào.')),
+      );
+    }
+
+    debugPrint('HISTORY REALTIME UI: householdId=$householdId userId=$userId');
+    final transactionsAsync = ref.watch(
+      transactionsStreamProvider(householdId),
+    );
+    final categoriesAsync = ref.watch(categoriesStreamProvider(householdId));
     final categories = categoriesAsync.valueOrNull ?? const <Category>[];
 
     return Scaffold(
@@ -68,7 +82,7 @@ class _TransactionHistoryScreenState
       body: transactionsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) {
-          return _HistoryErrorView(onRetry: _refresh);
+          return _HistoryErrorView(onRetry: () => _refresh(householdId));
         },
         data: (transactions) {
           final availableCategories = _availableCategories(categories);
@@ -80,7 +94,7 @@ class _TransactionHistoryScreenState
           final summary = _HistorySummary.from(filteredTransactions);
 
           return RefreshIndicator(
-            onRefresh: _refresh,
+            onRefresh: () => _refresh(householdId),
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
@@ -167,10 +181,14 @@ class _TransactionHistoryScreenState
                         return _TransactionHistoryTile(
                           transaction: transaction,
                           category: category,
-                          onEdit: () => context.push(
-                            AppRoutes.editTransaction,
-                            extra: transaction,
-                          ),
+                          onEdit: () {
+                            if (context.mounted) {
+                              context.push(
+                                AppRoutes.editTransaction,
+                                extra: transaction,
+                              );
+                            }
+                          },
                           onDelete: () => _confirmDelete(transaction),
                         );
                       },
@@ -272,9 +290,9 @@ class _TransactionHistoryScreenState
     }
   }
 
-  Future<void> _refresh() async {
-    ref.invalidate(transactionListProvider);
-    ref.invalidate(categoryListProvider);
+  Future<void> _refresh(String householdId) async {
+    ref.invalidate(transactionsStreamProvider(householdId));
+    ref.invalidate(categoriesStreamProvider(householdId));
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
@@ -456,19 +474,7 @@ class _FilterPanel extends StatelessWidget {
                     for (final category in categories)
                       DropdownMenuItem(
                         value: category.id,
-                        child: Row(
-                          children: [
-                            Icon(
-                              CategoryVisuals.iconFromName(category.icon),
-                              color: CategoryVisuals.colorFromHex(
-                                category.color,
-                              ),
-                              size: 20,
-                            ),
-                            const SizedBox(width: AppSpacing.sm),
-                            Expanded(child: Text(category.name)),
-                          ],
-                        ),
+                        child: _CategoryFilterDropdownLabel(category: category),
                       ),
                   ],
                   onChanged: onCategoryChanged,
@@ -520,6 +526,35 @@ class _SummaryStrip extends StatelessWidget {
             label: '-${currencyFormat.format(expense)}',
             icon: Icons.trending_down,
             color: const Color(0xFFC2410C),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CategoryFilterDropdownLabel extends StatelessWidget {
+  const _CategoryFilterDropdownLabel({required this.category});
+
+  final Category category;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          CategoryVisuals.iconFromName(category.icon),
+          color: CategoryVisuals.colorFromHex(category.color),
+          size: 20,
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 220),
+          child: Text(
+            category.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -714,7 +749,11 @@ class _EmptyHistoryView extends StatelessWidget {
               )
             else
               FilledButton.icon(
-                onPressed: () => context.push(AppRoutes.addTransaction),
+                onPressed: () {
+                  if (context.mounted) {
+                    context.push(AppRoutes.addTransaction);
+                  }
+                },
                 icon: const Icon(Icons.add),
                 label: const Text('Thêm giao dịch'),
               ),
