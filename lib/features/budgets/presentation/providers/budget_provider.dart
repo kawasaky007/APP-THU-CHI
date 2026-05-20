@@ -63,6 +63,7 @@ final budgetActionProvider =
     StateNotifierProvider<BudgetActionController, BudgetActionState>((ref) {
       return BudgetActionController(
         repository: ref.watch(budgetRepositoryProvider),
+        ref: ref,
       );
     });
 
@@ -74,11 +75,13 @@ class BudgetActionState {
 }
 
 class BudgetActionController extends StateNotifier<BudgetActionState> {
-  BudgetActionController({required BudgetRepository repository})
+  BudgetActionController({required BudgetRepository repository, required Ref ref})
     : _repository = repository,
+      _ref = ref,
       super(const BudgetActionState());
 
   final BudgetRepository _repository;
+  final Ref _ref;
 
   Future<bool> upsertBudget({
     required String householdId,
@@ -95,12 +98,22 @@ class BudgetActionController extends StateNotifier<BudgetActionState> {
         year: year,
         amount: amount,
       );
+      _invalidateBudgetMonth(
+        householdId: householdId,
+        month: month,
+        year: year,
+      );
     });
   }
 
   Future<bool> deleteBudget(Budget budget) {
     return _runAction(() async {
       await _repository.deleteBudget(budget);
+      _invalidateBudgetMonth(
+        householdId: budget.householdId,
+        month: budget.month,
+        year: budget.year,
+      );
     });
   }
 
@@ -137,5 +150,21 @@ class BudgetActionController extends StateNotifier<BudgetActionState> {
     if (mounted) {
       state = nextState;
     }
+  }
+
+  void _invalidateBudgetMonth({
+    required String householdId,
+    required int month,
+    required int year,
+  }) {
+    _ref.invalidate(
+      budgetsByMonthProvider(
+        BudgetMonthParams(
+          householdId: householdId,
+          month: month,
+          year: year,
+        ),
+      ),
+    );
   }
 }

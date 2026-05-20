@@ -31,6 +31,46 @@ final transactionsStreamProvider = StreamProvider.autoDispose
           .watchTransactions(householdId);
     });
 
+class TransactionMonthParams {
+  const TransactionMonthParams({
+    required this.householdId,
+    required this.month,
+  });
+
+  final String householdId;
+  final DateTime month;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TransactionMonthParams &&
+          other.householdId == householdId &&
+          other.month.year == month.year &&
+          other.month.month == month.month;
+
+  @override
+  int get hashCode => Object.hash(householdId, month.year, month.month);
+}
+
+final transactionsByMonthStreamProvider = StreamProvider.autoDispose
+    .family<List<Transaction>, TransactionMonthParams>((ref, params) {
+      debugPrint(
+        'TRANSACTIONS MONTH STREAM SUBSCRIBED: ${params.householdId} ${params.month}',
+      );
+      ref.onDispose(
+        () => debugPrint(
+          'TRANSACTIONS MONTH STREAM DISPOSED: ${params.householdId} ${params.month}',
+        ),
+      );
+
+      return ref
+          .watch(transactionRepositoryProvider)
+          .watchTransactionsByMonth(
+            householdId: params.householdId,
+            month: params.month,
+          );
+    });
+
 final transactionActionProvider =
     StateNotifierProvider<TransactionActionController, TransactionActionState>((
       ref,

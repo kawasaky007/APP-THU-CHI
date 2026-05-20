@@ -37,6 +37,63 @@ class TransactionRepository {
         });
   }
 
+  Stream<List<Transaction>> watchTransactionsByMonth({
+    required String householdId,
+    required DateTime month,
+  }) {
+    final start = DateTime(month.year, month.month, 1);
+    final end = DateTime(month.year, month.month + 1, 1);
+    final startIso = start.toIso8601String();
+    final endIso = end.toIso8601String();
+
+    debugPrint(
+      'WATCH TRANSACTIONS BY MONTH: $householdId [$startIso, $endIso)',
+    );
+
+    return _client
+        .from(SupabaseTables.transactions)
+        .stream(primaryKey: ['id'])
+        .eq('household_id', householdId)
+        .order('transaction_date', ascending: false)
+        .asyncMap((rows) {
+          final deduplicatedRows = _dedupeRowsById(
+            rows,
+            entityName: 'TRANSACTIONS_MONTH',
+          );
+          final transactions = deduplicatedRows
+              .map(Transaction.fromJson)
+              .where((t) =>
+                  !t.transactionDate.isBefore(start) &&
+                  t.transactionDate.isBefore(end))
+              .toList();
+          transactions.sort(_compareTransaction);
+          debugPrint(
+            'TRANSACTIONS MONTH REALTIME UPDATE: ${transactions.length}',
+          );
+          return transactions;
+        });
+  }
+
+  Future<List<Transaction>> fetchTransactionsPage({
+    required String householdId,
+    required int limit,
+    required int offset,
+  }) {
+    return _guard('Lấy trang giao dịch', () async {
+      final rows = await _client
+          .from(SupabaseTables.transactions)
+          .select()
+          .eq('household_id', householdId)
+          .order('transaction_date', ascending: false)
+          .order('created_at', ascending: false)
+          .range(offset, offset + limit - 1);
+
+      final transactions = _asJsonList(rows).map(Transaction.fromJson).toList();
+      transactions.sort(_compareTransaction);
+      return transactions;
+    });
+  }
+
   Future<List<Transaction>> fetchTransactions(String householdId) {
     return _guard('Lấy danh sách giao dịch', () async {
       final rows = await _client
