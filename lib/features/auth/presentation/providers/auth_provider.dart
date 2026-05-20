@@ -98,15 +98,9 @@ class AuthController extends StateNotifier<AuthState> {
     );
   }
 
-  Future<void> createHousehold({
-    required String name,
-    int? monthlyBudget,
-  }) async {
+  Future<void> createHousehold({required String name}) async {
     await _runSessionAction(
-      () => _repo.createHouseholdForCurrentUser(
-        name: name,
-        monthlyBudget: monthlyBudget,
-      ),
+      () => _repo.createHouseholdForCurrentUser(name: name),
     );
   }
 
@@ -135,23 +129,6 @@ class AuthController extends StateNotifier<AuthState> {
 
     try {
       final session = await _repo.updateCurrentHouseholdName(name);
-      if (!mounted) {
-        return false;
-      }
-      _setState(AuthState.fromSession(session));
-      return true;
-    } catch (error) {
-      _setState(previousState.withError(_errorMessage(error)));
-      return false;
-    }
-  }
-
-  Future<bool> updateMonthlyBudget(int monthlyBudget) async {
-    final previousState = state;
-    _setState(state.asLoading());
-
-    try {
-      final session = await _repo.updateCurrentHouseholdBudget(monthlyBudget);
       if (!mounted) {
         return false;
       }

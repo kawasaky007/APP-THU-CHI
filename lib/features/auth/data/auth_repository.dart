@@ -119,7 +119,6 @@ class AuthRepository {
 
   Future<AuthSessionData> createHouseholdForCurrentUser({
     required String name,
-    int? monthlyBudget,
   }) {
     return _guard('Tạo household mới', () async {
       final user = _requireCurrentUser();
@@ -128,7 +127,6 @@ class AuthRepository {
       final membership = await _householdRepository.createHouseholdForProfile(
         profile: profile,
         name: name,
-        monthlyBudget: monthlyBudget,
       );
 
       return AuthSessionData(
@@ -182,44 +180,6 @@ class AuthRepository {
         household: household,
         name: name,
       );
-
-      return AuthSessionData(
-        user: user,
-        profile: _profileWithHouseholdRole(
-          profile: profile,
-          household: updatedHousehold,
-        ),
-        household: updatedHousehold,
-      );
-    });
-  }
-
-  Future<AuthSessionData> updateCurrentHouseholdBudget(int monthlyBudget) {
-    return _guard('Cập nhật ngân sách tháng', () async {
-      final user = _requireCurrentUser();
-      final profile = await _getOrCreateProfileForUser(user);
-      final householdId = profile.householdId;
-
-      if (householdId == null || householdId.isEmpty) {
-        throw const AuthRepositoryException(
-          message: 'Bạn chưa tham gia household nào.',
-          actionName: 'Cập nhật ngân sách tháng',
-        );
-      }
-
-      final household = await _householdRepository.getById(householdId);
-      if (household == null) {
-        throw const AuthRepositoryException(
-          message: 'Không tìm thấy household hiện tại.',
-          actionName: 'Cập nhật ngân sách tháng',
-        );
-      }
-
-      final updatedHousehold = await _householdRepository
-          .updateHouseholdMonthlyBudget(
-            household: household,
-            monthlyBudget: monthlyBudget,
-          );
 
       return AuthSessionData(
         user: user,

@@ -82,7 +82,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
         error: (error, stackTrace) => _FormLoadError(
           onRetry: householdId == null
               ? null
-              : () => ref.invalidate(categoriesStreamProvider(householdId)),
+              : () => _retryCategories(householdId),
         ),
         data: (categories) {
           final typedCategories = categories
@@ -98,8 +98,8 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
             child: ListView(
               padding: const EdgeInsets.all(AppSpacing.md),
               children: [
-                if (actionState.errorMessage != null) ...[
-                  _TransactionFormError(message: actionState.errorMessage!),
+                if (actionState.errorMessage case final errorMessage?) ...[
+                  _TransactionFormError(message: errorMessage),
                   const SizedBox(height: AppSpacing.md),
                 ],
                 TextFormField(
@@ -284,7 +284,10 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
 
     FocusScope.of(context).unfocus();
     final router = GoRouter.of(context);
-    final amount = _parseAmount(_amountController.text)!;
+    final amount = _parseAmount(_amountController.text);
+    if (amount == null) {
+      return;
+    }
     final note = _noteController.text;
     final notifier = ref.read(transactionActionProvider.notifier);
     final transaction = widget.transaction;
@@ -328,6 +331,15 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
       return null;
     }
     return double.tryParse(cleanValue);
+  }
+
+  void _retryCategories(String householdId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      ref.invalidate(categoriesStreamProvider(householdId));
+    });
   }
 
   void _setLocalState(VoidCallback update) {

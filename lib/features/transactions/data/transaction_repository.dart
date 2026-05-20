@@ -140,13 +140,25 @@ class TransactionRepository {
     });
   }
 
-  Future<void> deleteTransaction(Transaction transaction) {
+  Future<void> deleteTransaction({
+    required String transactionId,
+    required String householdId,
+  }) {
     return _guard('Xóa giao dịch', () async {
+      final cleanTransactionId = _normalizeId(
+        transactionId,
+        fieldName: 'giao dịch',
+      );
+      final cleanHouseholdId = _normalizeId(
+        householdId,
+        fieldName: 'household',
+      );
+
       final row = await _client
           .from(SupabaseTables.transactions)
           .delete()
-          .eq('id', transaction.id)
-          .eq('household_id', transaction.householdId)
+          .eq('id', cleanTransactionId)
+          .eq('household_id', cleanHouseholdId)
           .select('id');
 
       _requireSingleJsonMap(
@@ -261,6 +273,17 @@ void _validateCategory(Category category, String householdId) {
       actionName: 'Kiểm tra giao dịch',
     );
   }
+}
+
+String _normalizeId(String value, {required String fieldName}) {
+  final cleanValue = value.trim();
+  if (cleanValue.isEmpty) {
+    throw TransactionRepositoryException(
+      message: 'Không tìm thấy $fieldName hợp lệ.',
+      actionName: 'Kiểm tra giao dịch',
+    );
+  }
+  return cleanValue;
 }
 
 DateTime _normalizeTransactionDate(DateTime value) {

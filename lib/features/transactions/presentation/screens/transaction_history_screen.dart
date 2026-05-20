@@ -80,6 +80,8 @@ class _TransactionHistoryScreenState
         ],
       ),
       body: transactionsAsync.when(
+        skipLoadingOnRefresh: true,
+        skipLoadingOnReload: true,
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) {
           return _HistoryErrorView(onRetry: () => _refresh(householdId));
@@ -91,7 +93,10 @@ class _TransactionHistoryScreenState
             transactions,
             effectiveCategoryId: effectiveCategoryId,
           );
-          final summary = _HistorySummary.from(filteredTransactions);
+          final visibleTransactions = filteredTransactions
+              .where(_hasStableTransactionId)
+              .toList();
+          final summary = _HistorySummary.from(visibleTransactions);
 
           return RefreshIndicator(
             onRefresh: () => _refresh(householdId),
@@ -142,7 +147,7 @@ class _TransactionHistoryScreenState
                         ),
                         const SizedBox(height: AppSpacing.md),
                         _SummaryStrip(
-                          count: filteredTransactions.length,
+                          count: visibleTransactions.length,
                           income: summary.income,
                           expense: summary.expense,
                           currencyFormat: _currencyFormat,
@@ -151,7 +156,7 @@ class _TransactionHistoryScreenState
                     ),
                   ),
                 ),
-                if (filteredTransactions.isEmpty)
+                if (visibleTransactions.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
                     child: _EmptyHistoryView(
@@ -168,28 +173,26 @@ class _TransactionHistoryScreenState
                       96,
                     ),
                     sliver: SliverList.separated(
-                      itemCount: filteredTransactions.length,
+                      itemCount: visibleTransactions.length,
                       separatorBuilder: (context, index) =>
                           const SizedBox(height: AppSpacing.sm),
                       itemBuilder: (context, index) {
-                        final transaction = filteredTransactions[index];
+                        final transaction = visibleTransactions[index];
                         final category = _findCategory(
                           categories,
                           transaction.categoryId,
                         );
+                        final transactionId = transaction.id.trim();
 
                         return _TransactionHistoryTile(
+                          key: ValueKey(transactionId),
                           transaction: transaction,
                           category: category,
-                          onEdit: () {
-                            if (context.mounted) {
-                              context.push(
-                                AppRoutes.editTransaction,
-                                extra: transaction,
-                              );
-                            }
-                          },
-                          onDelete: () => _confirmDelete(transaction),
+                          onEdit: () => _editTransaction(transaction),
+                          onDelete: () => _confirmDelete(
+                            transactionId: transactionId,
+                            householdId: householdId,
+                          ),
                         );
                       },
                     ),
@@ -290,9 +293,22 @@ class _TransactionHistoryScreenState
     }
   }
 
+  void _editTransaction(Transaction transaction) {
+    if (!mounted || transaction.id.trim().isEmpty) {
+      return;
+    }
+
+    context.push(AppRoutes.editTransaction, extra: transaction);
+  }
+
   Future<void> _refresh(String householdId) async {
-    ref.invalidate(transactionsStreamProvider(householdId));
-    ref.invalidate(categoriesStreamProvider(householdId));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      ref.invalidate(transactionsStreamProvider(householdId));
+      ref.invalidate(categoriesStreamProvider(householdId));
+    });
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
@@ -310,7 +326,21 @@ class _TransactionHistoryScreenState
     });
   }
 
-  Future<void> _confirmDelete(Transaction transaction) async {
+  Future<void> _confirmDelete({
+    required String transactionId,
+    required String householdId,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+    if (transactionId.trim().isEmpty || householdId.trim().isEmpty) {
+      _showSnackBarAfterFrame(
+        'Không thể xóa giao dịch vì thiếu dữ liệu định danh.',
+        isError: true,
+      );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -340,7 +370,10 @@ class _TransactionHistoryScreenState
 
     final success = await ref
         .read(transactionActionProvider.notifier)
-        .deleteTransaction(transaction);
+        .deleteTransaction(
+          transactionId: transactionId,
+          householdId: householdId,
+        );
     if (!mounted) {
       return;
     }
@@ -349,7 +382,34 @@ class _TransactionHistoryScreenState
         ? 'Đã xóa giao dịch.'
         : ref.read(transactionActionProvider).errorMessage ??
               'Không thể xóa giao dịch.';
-    AppFeedback.showSnackBar(message, isError: !success);
+
+    if (success) {
+      _invalidateTransactionsAfterFrame(householdId);
+    }
+    _showSnackBarAfterFrame(message, isError: !success);
+  }
+
+  void _invalidateTransactionsAfterFrame(String householdId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      Future<void>.delayed(const Duration(milliseconds: 120), () {
+        if (!mounted) {
+          return;
+        }
+        ref.invalidate(transactionsStreamProvider(householdId));
+      });
+    });
+  }
+
+  void _showSnackBarAfterFrame(String message, {required bool isError}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      AppFeedback.showSnackBar(message, isError: isError);
+    });
   }
 
   void _setLocalState(VoidCallback update) {
@@ -404,6 +464,10 @@ class _FilterPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final monthFormat = DateFormat('MM/yyyy', 'vi_VN');
+    final selectedMonth = this.selectedMonth;
+    final selectedMonthLabel = selectedMonth == null
+        ? 'Tất cả tháng'
+        : monthFormat.format(selectedMonth);
 
     return Card(
       child: Padding(
@@ -419,11 +483,7 @@ class _FilterPanel extends StatelessWidget {
                 OutlinedButton.icon(
                   onPressed: onPickMonth,
                   icon: const Icon(Icons.calendar_month_outlined),
-                  label: Text(
-                    selectedMonth == null
-                        ? 'Tất cả tháng'
-                        : monthFormat.format(selectedMonth!),
-                  ),
+                  label: Text(selectedMonthLabel),
                 ),
                 if (selectedMonth != null)
                   IconButton.outlined(
@@ -606,6 +666,7 @@ class _SummaryChip extends StatelessWidget {
 
 class _TransactionHistoryTile extends StatelessWidget {
   _TransactionHistoryTile({
+    super.key,
     required this.transaction,
     required this.category,
     required this.onEdit,
@@ -626,12 +687,13 @@ class _TransactionHistoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final category = this.category;
     final color = category == null
         ? CategoryVisuals.toneForType(transaction.type)
-        : CategoryVisuals.colorFromHex(category!.color);
+        : CategoryVisuals.colorFromHex(category.color);
     final icon = category == null
         ? Icons.category_outlined
-        : CategoryVisuals.iconFromName(category!.icon);
+        : CategoryVisuals.iconFromName(category.icon);
     final prefix = transaction.type == TransactionType.income ? '+' : '-';
     final note = transaction.note?.trim();
 
@@ -677,32 +739,23 @@ class _TransactionHistoryTile extends StatelessWidget {
             ],
           ),
         ),
-        trailing: MenuAnchor(
-          builder: (context, controller, child) {
-            return IconButton(
-              tooltip: 'Tùy chọn',
-              onPressed: () {
-                if (controller.isOpen) {
-                  controller.close();
-                } else {
-                  controller.open();
-                }
-              },
-              icon: const Icon(Icons.more_vert),
-            );
-          },
-          menuChildren: [
-            MenuItemButton(
-              onPressed: onEdit,
-              leadingIcon: const Icon(Icons.edit_outlined),
-              child: const Text('Sửa'),
-            ),
-            MenuItemButton(
-              onPressed: onDelete,
-              leadingIcon: const Icon(Icons.delete_outline),
-              child: const Text('Xóa'),
-            ),
-          ],
+        trailing: SizedBox(
+          width: 96,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                tooltip: 'Sửa giao dịch',
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined),
+              ),
+              IconButton(
+                tooltip: 'Xóa giao dịch',
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -846,4 +899,8 @@ Category? _findCategory(List<Category> categories, String categoryId) {
     }
   }
   return null;
+}
+
+bool _hasStableTransactionId(Transaction transaction) {
+  return transaction.id.trim().isNotEmpty;
 }

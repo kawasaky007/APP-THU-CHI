@@ -48,6 +48,8 @@ class Category {
   }
 
   Map<String, dynamic> toJson() {
+    final createdAt = this.createdAt;
+    final updatedAt = this.updatedAt;
     return {
       'id': id,
       'household_id': householdId,
@@ -58,8 +60,8 @@ class Category {
       'is_default': isDefault,
       'sort_order': sortOrder,
       if (description != null) 'description': description,
-      if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
-      if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
+      if (createdAt != null) 'created_at': createdAt.toIso8601String(),
+      if (updatedAt != null) 'updated_at': updatedAt.toIso8601String(),
     };
   }
 

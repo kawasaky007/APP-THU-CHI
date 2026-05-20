@@ -1,46 +1,35 @@
-import 'transaction_type.dart';
-
-class Transaction {
-  const Transaction({
+class Budget {
+  const Budget({
     required this.id,
     required this.householdId,
-    required this.userId,
     required this.categoryId,
-    required this.type,
+    required this.month,
+    required this.year,
     required this.amount,
-    required this.title,
-    required this.transactionDate,
-    this.note,
-    this.paymentMethod,
+    this.createdBy,
     this.createdAt,
     this.updatedAt,
   });
 
   final String id;
   final String householdId;
-  final String userId;
   final String categoryId;
-  final TransactionType type;
+  final int month;
+  final int year;
   final double amount;
-  final String title;
-  final String? note;
-  final String? paymentMethod;
-  final DateTime transactionDate;
+  final String? createdBy;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
-  factory Transaction.fromJson(Map<String, dynamic> json) {
-    return Transaction(
+  factory Budget.fromJson(Map<String, dynamic> json) {
+    return Budget(
       id: _readRequiredString(json, 'id'),
       householdId: _readRequiredString(json, 'household_id'),
-      userId: _readRequiredString(json, 'user_id'),
       categoryId: _readRequiredString(json, 'category_id'),
-      type: TransactionType.fromJson(json['type']),
-      amount: _readRequiredDouble(json['amount']),
-      title: _readRequiredString(json, 'title'),
-      note: _readString(json, 'note'),
-      paymentMethod: _readString(json, 'payment_method'),
-      transactionDate: _readRequiredDateTime(json, 'transaction_date'),
+      month: _readRequiredInt(json['month'], 'month'),
+      year: _readRequiredInt(json['year'], 'year'),
+      amount: _readRequiredDouble(json['amount'], 'amount'),
+      createdBy: _readString(json, 'created_by'),
       createdAt: _readDateTime(json['created_at']),
       updatedAt: _readDateTime(json['updated_at']),
     );
@@ -52,44 +41,35 @@ class Transaction {
     return {
       'id': id,
       'household_id': householdId,
-      'user_id': userId,
       'category_id': categoryId,
-      'type': type.value,
+      'month': month,
+      'year': year,
       'amount': amount,
-      'title': title,
-      'transaction_date': transactionDate.toIso8601String(),
-      if (note != null) 'note': note,
-      if (paymentMethod != null) 'payment_method': paymentMethod,
+      if (createdBy != null) 'created_by': createdBy,
       if (createdAt != null) 'created_at': createdAt.toIso8601String(),
       if (updatedAt != null) 'updated_at': updatedAt.toIso8601String(),
     };
   }
 
-  Transaction copyWith({
+  Budget copyWith({
     String? id,
     String? householdId,
-    String? userId,
     String? categoryId,
-    TransactionType? type,
+    int? month,
+    int? year,
     double? amount,
-    String? title,
-    String? note,
-    String? paymentMethod,
-    DateTime? transactionDate,
+    String? createdBy,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
-    return Transaction(
+    return Budget(
       id: id ?? this.id,
       householdId: householdId ?? this.householdId,
-      userId: userId ?? this.userId,
       categoryId: categoryId ?? this.categoryId,
-      type: type ?? this.type,
+      month: month ?? this.month,
+      year: year ?? this.year,
       amount: amount ?? this.amount,
-      title: title ?? this.title,
-      note: note ?? this.note,
-      paymentMethod: paymentMethod ?? this.paymentMethod,
-      transactionDate: transactionDate ?? this.transactionDate,
+      createdBy: createdBy ?? this.createdBy,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -99,7 +79,7 @@ class Transaction {
 String _readRequiredString(Map<String, dynamic> json, String key) {
   final value = json[key];
   if (value == null || value.toString().trim().isEmpty) {
-    throw FormatException("Thiếu trường bắt buộc '$key' trong Transaction.");
+    throw FormatException("Thiếu trường bắt buộc '$key' trong Budget.");
   }
   return value.toString();
 }
@@ -112,28 +92,30 @@ String? _readString(Map<String, dynamic> json, String key) {
   return value.toString();
 }
 
-double _readRequiredDouble(Object? value) {
-  final parsedValue = _readDouble(value);
+int _readRequiredInt(Object? value, String key) {
+  if (value == null || value.toString().trim().isEmpty) {
+    throw FormatException("Trường '$key' không hợp lệ.");
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  final parsedValue = int.tryParse(value.toString());
   if (parsedValue == null) {
-    throw const FormatException("Trường 'amount' không hợp lệ.");
+    throw FormatException("Trường '$key' không hợp lệ.");
   }
   return parsedValue;
 }
 
-double? _readDouble(Object? value) {
+double _readRequiredDouble(Object? value, String key) {
   if (value == null || value.toString().trim().isEmpty) {
-    return null;
+    throw FormatException("Trường '$key' không hợp lệ.");
   }
   if (value is num) {
     return value.toDouble();
   }
-  return double.tryParse(value.toString());
-}
-
-DateTime _readRequiredDateTime(Map<String, dynamic> json, String key) {
-  final parsedValue = _readDateTime(json[key]);
+  final parsedValue = double.tryParse(value.toString());
   if (parsedValue == null) {
-    throw FormatException("Trường '$key' không phải datetime hợp lệ.");
+    throw FormatException("Trường '$key' không hợp lệ.");
   }
   return parsedValue;
 }

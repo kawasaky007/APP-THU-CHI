@@ -1,3 +1,4 @@
+export 'budget.dart';
 export 'category.dart';
 export 'household.dart';
 export 'transaction.dart';

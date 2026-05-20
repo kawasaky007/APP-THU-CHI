@@ -36,7 +36,11 @@ class CategoryVisuals {
     if (value.length != 6) {
       return const Color(0xFF0F8B6F);
     }
-    return Color(int.parse('FF$value', radix: 16));
+    final parsedColor = int.tryParse('FF$value', radix: 16);
+    if (parsedColor == null) {
+      return const Color(0xFF0F8B6F);
+    }
+    return Color(parsedColor);
   }
 
   static IconData iconFromName(String name) {

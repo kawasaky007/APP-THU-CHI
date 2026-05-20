@@ -41,8 +41,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (authState.errorMessage != null) ...[
-              AuthErrorBanner(message: authState.errorMessage!),
+            if (authState.errorMessage case final errorMessage?) ...[
+              AuthErrorBanner(message: errorMessage),
               const SizedBox(height: AppSpacing.md),
             ],
             TextFormField(

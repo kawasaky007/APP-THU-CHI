@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../../../core/config/app_constants.dart';
 import '../../../../core/models/models.dart';
-import '../../../../shared/formatters/currency_input_formatter.dart';
 import '../../../../shared/widgets/app_feedback.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 
@@ -17,6 +15,7 @@ class ProfileScreen extends ConsumerWidget {
     final authState = ref.watch(authControllerProvider);
     final profile = authState.profile;
     final household = authState.household;
+    final inviteCode = household?.inviteCode;
 
     return Scaffold(
       appBar: AppBar(
@@ -47,15 +46,12 @@ class ProfileScreen extends ConsumerWidget {
             _HouseholdCard(
               household: household,
               role: profile?.role,
-              onCopyInviteCode: household?.inviteCode == null
+              onCopyInviteCode: inviteCode == null
                   ? null
-                  : () => _copyInviteCode(household!.inviteCode!),
+                  : () => _copyInviteCode(inviteCode),
               onRenameHousehold: household == null
                   ? null
                   : () => _renameHousehold(context, ref, household),
-              onUpdateMonthlyBudget: household == null
-                  ? null
-                  : () => _updateMonthlyBudget(context, ref, household),
               onLeaveHousehold:
                   household == null || profile?.role == UserProfileRole.owner
                   ? null
@@ -131,53 +127,6 @@ class ProfileScreen extends ConsumerWidget {
     return showDialog<String>(
       context: context,
       builder: (_) => _RenameHouseholdDialog(currentName: currentName),
-    );
-  }
-
-  Future<void> _updateMonthlyBudget(
-    BuildContext context,
-    WidgetRef ref,
-    Household household,
-  ) async {
-    final monthlyBudget = await _showBudgetDialog(
-      context,
-      household.monthlyBudget,
-    );
-    if (!context.mounted || monthlyBudget == null) {
-      return;
-    }
-
-    final success = await ref
-        .read(authControllerProvider.notifier)
-        .updateMonthlyBudget(monthlyBudget);
-    if (!context.mounted) {
-      return;
-    }
-
-    if (success) {
-      AppFeedback.showSnackBar('Đã cập nhật ngân sách tháng.');
-      return;
-    }
-
-    final message =
-        ref.read(authControllerProvider).errorMessage ??
-        'Không thể cập nhật ngân sách tháng. Vui lòng thử lại.';
-    await AppFeedback.showErrorDialog(
-      title: 'Không thể cập nhật ngân sách',
-      message: message,
-    );
-    if (context.mounted) {
-      ref.read(authControllerProvider.notifier).clearError();
-    }
-  }
-
-  Future<int?> _showBudgetDialog(
-    BuildContext context,
-    int? currentBudget,
-  ) async {
-    return showDialog<int>(
-      context: context,
-      builder: (_) => _MonthlyBudgetDialog(currentBudget: currentBudget),
     );
   }
 
@@ -417,76 +366,6 @@ class _RenameHouseholdDialogState extends State<_RenameHouseholdDialog> {
   }
 }
 
-class _MonthlyBudgetDialog extends StatefulWidget {
-  const _MonthlyBudgetDialog({required this.currentBudget});
-
-  final int? currentBudget;
-
-  @override
-  State<_MonthlyBudgetDialog> createState() => _MonthlyBudgetDialogState();
-}
-
-class _MonthlyBudgetDialogState extends State<_MonthlyBudgetDialog> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(
-      text: widget.currentBudget == null
-          ? ''
-          : CurrencyInputFormatter.formatNumber(widget.currentBudget!),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Cập nhật ngân sách tháng'),
-      content: TextFormField(
-        controller: _controller,
-        autofocus: true,
-        keyboardType: TextInputType.number,
-        textInputAction: TextInputAction.done,
-        inputFormatters: const [CurrencyInputFormatter()],
-        decoration: const InputDecoration(
-          labelText: 'Ngân sách tháng',
-          prefixIcon: Icon(Icons.savings_outlined),
-          suffixText: 'đ',
-        ),
-        onFieldSubmitted: (_) => _submit(),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () {
-            if (mounted) {
-              Navigator.of(context).pop();
-            }
-          },
-          child: const Text('Hủy'),
-        ),
-        FilledButton.icon(
-          onPressed: _submit,
-          icon: const Icon(Icons.save_outlined),
-          label: const Text('Lưu'),
-        ),
-      ],
-    );
-  }
-
-  void _submit() {
-    if (mounted) {
-      Navigator.of(context).pop(_parseBudget(_controller.text));
-    }
-  }
-}
-
 class _ProfileHeader extends StatelessWidget {
   const _ProfileHeader({required this.profile});
 
@@ -495,9 +374,10 @@ class _ProfileHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final fullName = profile?.fullName.trim().isNotEmpty == true
-        ? profile!.fullName
-        : 'Người dùng';
+    final profile = this.profile;
+    final fullName = profile == null || profile.fullName.trim().isEmpty
+        ? 'Người dùng'
+        : profile.fullName;
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -598,7 +478,6 @@ class _HouseholdCard extends StatelessWidget {
     required this.role,
     required this.onCopyInviteCode,
     required this.onRenameHousehold,
-    required this.onUpdateMonthlyBudget,
     required this.onLeaveHousehold,
     required this.onDeleteHousehold,
   });
@@ -607,7 +486,6 @@ class _HouseholdCard extends StatelessWidget {
   final UserProfileRole? role;
   final VoidCallback? onCopyInviteCode;
   final VoidCallback? onRenameHousehold;
-  final VoidCallback? onUpdateMonthlyBudget;
   final VoidCallback? onLeaveHousehold;
   final VoidCallback? onDeleteHousehold;
 
@@ -636,12 +514,6 @@ class _HouseholdCard extends StatelessWidget {
                   onPressed: onRenameHousehold,
                   icon: const Icon(Icons.edit_outlined),
                 ),
-                const SizedBox(width: AppSpacing.xs),
-                IconButton.outlined(
-                  tooltip: 'Cập nhật ngân sách tháng',
-                  onPressed: onUpdateMonthlyBudget,
-                  icon: const Icon(Icons.savings_outlined),
-                ),
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -654,11 +526,6 @@ class _HouseholdCard extends StatelessWidget {
               icon: Icons.group_outlined,
               label: 'Quyền trong household',
               value: _roleLabel(role),
-            ),
-            _InfoRow(
-              icon: Icons.savings_outlined,
-              label: 'Ngân sách tháng',
-              value: _formatCurrency(household?.monthlyBudget),
             ),
             const SizedBox(height: AppSpacing.sm),
             Container(
@@ -838,23 +705,6 @@ String? _validateHouseholdName(String? value) {
 
 String _normalizeHouseholdName(String value) {
   return value.trim().replaceAll(RegExp(r'\s+'), ' ');
-}
-
-int _parseBudget(String value) {
-  final digitsOnly = CurrencyInputFormatter.digitsOnly(value);
-  return int.tryParse(digitsOnly) ?? 0;
-}
-
-String _formatCurrency(int? amount) {
-  if (amount == null) {
-    return 'Chưa đặt';
-  }
-
-  return NumberFormat.currency(
-    locale: 'vi_VN',
-    symbol: 'đ',
-    decimalDigits: 0,
-  ).format(amount);
 }
 
 String _roleLabel(UserProfileRole? role) {

@@ -29,6 +29,12 @@ class AppShell extends StatelessWidget {
       label: 'Danh mục',
     ),
     _NavigationTab(
+      path: AppRoutes.budgets,
+      icon: Icons.savings_outlined,
+      selectedIcon: Icons.savings,
+      label: 'Ngân sách',
+    ),
+    _NavigationTab(
       path: AppRoutes.profile,
       icon: Icons.person_outline,
       selectedIcon: Icons.person,

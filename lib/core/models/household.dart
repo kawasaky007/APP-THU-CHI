@@ -33,6 +33,8 @@ class Household {
   }
 
   Map<String, dynamic> toJson() {
+    final createdAt = this.createdAt;
+    final updatedAt = this.updatedAt;
     return {
       'id': id,
       'name': name,
@@ -40,8 +42,8 @@ class Household {
       'currency_code': currencyCode,
       if (monthlyBudget != null) 'monthly_budget': monthlyBudget,
       if (inviteCode != null) 'invite_code': inviteCode,
-      if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
-      if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
+      if (createdAt != null) 'created_at': createdAt.toIso8601String(),
+      if (updatedAt != null) 'updated_at': updatedAt.toIso8601String(),
     };
   }
 

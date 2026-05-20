@@ -72,8 +72,9 @@ class SupabaseService {
   /// Household id hiện tại lấy từ bảng profiles.
   Future<String?> getCurrentHouseholdId() async {
     final result = await getCurrentHouseholdIdResult();
-    if (result.hasError) {
-      throw result.error!;
+    final error = result.error;
+    if (error != null) {
+      throw error;
     }
     return result.data;
   }
@@ -478,8 +479,9 @@ class ServiceResult<T> {
   }
 
   T requireData() {
+    final error = this.error;
     if (error != null) {
-      throw error!;
+      throw error;
     }
     return data as T;
   }
@@ -516,6 +518,7 @@ class SupabaseTables {
   static const households = 'households';
   static const categories = 'categories';
   static const transactions = 'transactions';
+  static const budgets = 'budgets';
 }
 
 Map<String, dynamic> _asJsonMap(Object? value) {

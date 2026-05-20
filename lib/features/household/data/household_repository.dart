@@ -63,37 +63,9 @@ class HouseholdRepository {
     });
   }
 
-  Future<Household> updateHouseholdMonthlyBudget({
-    required Household household,
-    required int monthlyBudget,
-  }) {
-    return _guard('Cập nhật ngân sách tháng', () async {
-      final row = await _client
-          .from(SupabaseTables.households)
-          .update({
-            'monthly_budget': _normalizeMonthlyBudget(monthlyBudget),
-            'updated_at': DateTime.now().toUtc().toIso8601String(),
-          })
-          .eq('id', household.id)
-          .select();
-
-      return Household.fromJson(
-        _requireSingleJsonMap(
-          row,
-          actionName: 'Cập nhật ngân sách tháng',
-          emptyMessage:
-              'Không thể cập nhật ngân sách. Vui lòng kiểm tra quyền cập nhật household.',
-          multipleMessage:
-              'Dữ liệu household bị trùng khi cập nhật ngân sách. Vui lòng kiểm tra database.',
-        ),
-      );
-    });
-  }
-
   Future<HouseholdMembership> createHouseholdForProfile({
     required UserProfile profile,
     required String name,
-    int? monthlyBudget,
   }) {
     return _guard('Tạo household mới', () async {
       final cleanName = name.trim();
@@ -109,7 +81,6 @@ class HouseholdRepository {
         id: _uuid.v4(),
         name: cleanName,
         ownerId: profile.id,
-        monthlyBudget: _normalizeMonthlyBudget(monthlyBudget),
         inviteCode: _generateInviteCode(),
         createdAt: now,
         updatedAt: now,
@@ -400,13 +371,6 @@ String _normalizeHouseholdName(String value) {
     );
   }
   return cleanName;
-}
-
-int _normalizeMonthlyBudget(int? value) {
-  if (value == null || value < 0) {
-    return 0;
-  }
-  return value;
 }
 
 UserProfile _profileWithoutHousehold(UserProfile profile) {

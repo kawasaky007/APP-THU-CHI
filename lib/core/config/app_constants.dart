@@ -4,8 +4,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 class AppConstants {
   AppConstants._();
 
-  static const appName = 'Quản lý Thu Chi Vợ Chồng';
-  static const appShortName = 'Thu Chi';
+  static const appName = 'Thu Chi Gia Đình';
+  static const appShortName = 'Thu Chi Gia Đình';
   static const envFileName = '.env';
 
   static const vietnameseLocale = Locale('vi', 'VN');

@@ -11,6 +11,7 @@ class AppRoutes {
   static const addTransaction = '/transactions/add';
   static const editTransaction = '/transactions/edit';
   static const categories = '/categories';
+  static const budgets = '/budgets';
   static const profile = '/profile';
 
   // Giữ lại hằng số cũ để các màn hình đã viết trước đó không bị gãy import.
@@ -31,6 +32,7 @@ class AppRouteNames {
   static const addTransaction = 'add-transaction';
   static const editTransaction = 'edit-transaction';
   static const categories = 'categories';
+  static const budgets = 'budgets';
   static const profile = 'profile';
 
   // Alias cũ cho các chỗ còn dùng tên settings.

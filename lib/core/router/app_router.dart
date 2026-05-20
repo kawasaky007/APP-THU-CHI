@@ -8,6 +8,7 @@ import '../../features/auth/presentation/providers/auth_state.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
+import '../../features/budgets/presentation/screens/budget_screen.dart';
 import '../../features/categories/presentation/screens/category_list_screen.dart';
 import '../../features/dashboard/presentation/pages/dashboard_page.dart';
 import '../../features/household/presentation/screens/create_household_screen.dart';
@@ -126,6 +127,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             name: AppRouteNames.categories,
             pageBuilder: (context, state) =>
                 const NoTransitionPage(child: CategoryListScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.budgets,
+            name: AppRouteNames.budgets,
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: BudgetScreen()),
           ),
           GoRoute(
             path: AppRoutes.profile,

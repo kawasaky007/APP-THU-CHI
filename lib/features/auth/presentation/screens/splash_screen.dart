@@ -38,7 +38,7 @@ class SplashScreen extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'Quản lý Thu Chi Vợ Chồng',
+                'Quản lý Thu Chi Gia Đình',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurfaceVariant,

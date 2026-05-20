@@ -32,12 +32,12 @@ class AppFeedback {
           : Theme.of(context).colorScheme;
 
       messenger
-        ..hideCurrentSnackBar()
+        ..clearSnackBars()
         ..showSnackBar(
           SnackBar(
             content: Text(cleanMessage),
             backgroundColor: isError ? colorScheme?.error : null,
-            behavior: SnackBarBehavior.floating,
+            behavior: SnackBarBehavior.fixed,
           ),
         );
     });
@@ -142,9 +142,10 @@ class _GlobalAppFeedbackState extends ConsumerState<GlobalAppFeedback> {
       valueListenable: service.loadingListenable,
       builder: (context, serviceLoading, child) {
         final showLoading = serviceLoading || authLoading;
+        final content = child ?? const SizedBox.shrink();
 
         return Stack(
-          children: [child!, if (showLoading) const _LoadingOverlay()],
+          children: [content, if (showLoading) const _LoadingOverlay()],
         );
       },
       child: widget.child,

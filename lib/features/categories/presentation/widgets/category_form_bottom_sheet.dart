@@ -98,8 +98,8 @@ class _CategoryFormBottomSheetState
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
-                if (actionState.errorMessage != null) ...[
-                  _FormErrorBanner(message: actionState.errorMessage!),
+                if (actionState.errorMessage case final errorMessage?) ...[
+                  _FormErrorBanner(message: errorMessage),
                   const SizedBox(height: AppSpacing.md),
                 ],
                 TextFormField(

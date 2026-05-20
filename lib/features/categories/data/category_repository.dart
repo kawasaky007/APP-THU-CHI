@@ -339,6 +339,7 @@ Map<String, dynamic> _categoryInsertPayload(Category category) {
 }
 
 Map<String, dynamic> _categoryUpdatePayload(Category category) {
+  final updatedAt = category.updatedAt;
   return {
     'household_id': _normalizeHouseholdId(category.householdId),
     'name': category.name,
@@ -346,8 +347,7 @@ Map<String, dynamic> _categoryUpdatePayload(Category category) {
     'color': category.color,
     'icon': category.icon,
     'sort_order': category.sortOrder,
-    if (category.updatedAt != null)
-      'updated_at': category.updatedAt!.toIso8601String(),
+    if (updatedAt != null) 'updated_at': updatedAt.toIso8601String(),
   };
 }
 

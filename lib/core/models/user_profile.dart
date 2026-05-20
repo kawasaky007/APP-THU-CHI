@@ -40,6 +40,8 @@ class UserProfile {
   }
 
   Map<String, dynamic> toJson() {
+    final createdAt = this.createdAt;
+    final updatedAt = this.updatedAt;
     return {
       'id': id,
       'email': email,
@@ -48,8 +50,8 @@ class UserProfile {
       if (householdId != null) 'household_id': householdId,
       if (avatarUrl != null) 'avatar_url': avatarUrl,
       if (phoneNumber != null) 'phone_number': phoneNumber,
-      if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
-      if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
+      if (createdAt != null) 'created_at': createdAt.toIso8601String(),
+      if (updatedAt != null) 'updated_at': updatedAt.toIso8601String(),
     };
   }
 

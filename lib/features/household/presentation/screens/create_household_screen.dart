@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/config/app_constants.dart';
 import '../../../../core/router/app_routes.dart';
-import '../../../../shared/formatters/currency_input_formatter.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/auth_screen_layout.dart';
 
@@ -19,7 +18,6 @@ class CreateHouseholdScreen extends ConsumerStatefulWidget {
 class _CreateHouseholdScreenState extends ConsumerState<CreateHouseholdScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _budgetController = TextEditingController();
 
   @override
   void initState() {
@@ -35,7 +33,6 @@ class _CreateHouseholdScreenState extends ConsumerState<CreateHouseholdScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _budgetController.dispose();
     super.dispose();
   }
 
@@ -51,34 +48,19 @@ class _CreateHouseholdScreenState extends ConsumerState<CreateHouseholdScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (authState.errorMessage != null) ...[
-              AuthErrorBanner(message: authState.errorMessage!),
+            if (authState.errorMessage case final errorMessage?) ...[
+              AuthErrorBanner(message: errorMessage),
               const SizedBox(height: AppSpacing.md),
             ],
             TextFormField(
               controller: _nameController,
               enabled: !authState.isLoading,
-              textInputAction: TextInputAction.next,
+              textInputAction: TextInputAction.done,
               decoration: const InputDecoration(
                 labelText: 'Tên household',
                 prefixIcon: Icon(Icons.home_outlined),
               ),
               validator: _validateName,
-              onChanged: (_) =>
-                  ref.read(authControllerProvider.notifier).clearError(),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextFormField(
-              controller: _budgetController,
-              enabled: !authState.isLoading,
-              keyboardType: TextInputType.number,
-              inputFormatters: const [CurrencyInputFormatter()],
-              textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(
-                labelText: 'Ngân sách tháng',
-                prefixIcon: Icon(Icons.savings_outlined),
-                suffixText: 'đ',
-              ),
               onFieldSubmitted: (_) => _submit(),
               onChanged: (_) =>
                   ref.read(authControllerProvider.notifier).clearError(),
@@ -129,11 +111,8 @@ class _CreateHouseholdScreenState extends ConsumerState<CreateHouseholdScreen> {
 
     FocusScope.of(context).unfocus();
     final name = _nameController.text;
-    final monthlyBudget = _parseBudget(_budgetController.text);
 
-    await ref
-        .read(authControllerProvider.notifier)
-        .createHousehold(name: name, monthlyBudget: monthlyBudget);
+    await ref.read(authControllerProvider.notifier).createHousehold(name: name);
   }
 
   String? _validateName(String? value) {
@@ -141,10 +120,5 @@ class _CreateHouseholdScreenState extends ConsumerState<CreateHouseholdScreen> {
       return 'Vui lòng nhập tên household.';
     }
     return null;
-  }
-
-  int _parseBudget(String value) {
-    final digitsOnly = CurrencyInputFormatter.digitsOnly(value);
-    return int.tryParse(digitsOnly) ?? 0;
   }
 }

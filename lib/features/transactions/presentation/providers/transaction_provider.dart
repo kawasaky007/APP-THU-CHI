@@ -93,9 +93,15 @@ class TransactionActionController
     });
   }
 
-  Future<bool> deleteTransaction(Transaction transaction) {
+  Future<bool> deleteTransaction({
+    required String transactionId,
+    required String householdId,
+  }) {
     return _runAction(() async {
-      await _repository.deleteTransaction(transaction);
+      await _repository.deleteTransaction(
+        transactionId: transactionId,
+        householdId: householdId,
+      );
     });
   }
 

@@ -8,9 +8,11 @@ import '../../../../core/config/app_constants.dart';
 import '../../../../core/models/models.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../budgets/presentation/providers/budget_provider.dart';
+import '../../../budgets/presentation/providers/budget_summary_provider.dart';
 import '../../../categories/presentation/providers/category_provider.dart';
 import '../../../categories/presentation/widgets/category_visuals.dart';
-import '../providers/dashboard_provider.dart';
+import '../../../transactions/presentation/providers/transaction_provider.dart';
 import '../providers/statistics_provider.dart';
 import '../providers/summary_provider.dart';
 
@@ -33,7 +35,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final authState = ref.watch(authControllerProvider);
     final householdId = ref.watch(currentHouseholdIdProvider);
     final userId = authState.user?.id ?? authState.profile?.id;
-    final monthlyBudget = authState.household?.monthlyBudget;
+    final now = DateTime.now();
+    final currentMonth = DateTime(now.year, now.month);
 
     if (householdId == null) {
       return const Scaffold(
@@ -45,14 +48,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       'DASHBOARD REALTIME UI: householdId=$householdId userId=$userId',
     );
     final transactionsAsync = ref.watch(
-      dashboardTransactionsProvider(householdId),
+      transactionsStreamProvider(householdId),
+    );
+    final budgetParams = BudgetMonthParams(
+      householdId: householdId,
+      month: currentMonth.month,
+      year: currentMonth.year,
     );
 
     return transactionsAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (error, stackTrace) => _DashboardErrorView(
-        onRetry: () => ref.invalidate(dashboardTransactionsProvider(householdId)),
+        onRetry: () => ref.invalidate(transactionsStreamProvider(householdId)),
       ),
       data: (transactions) {
         debugPrint('DASHBOARD REALTIME TRANSACTIONS: ${transactions.length}');
@@ -63,62 +71,89 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         final summary = ref.watch(
           dashboardSummaryProvider(monthlyTransactions),
         );
-        final categoriesAsync = ref.watch(categoriesStreamProvider(householdId));
+        final categoriesAsync = ref.watch(
+          categoriesStreamProvider(householdId),
+        );
 
         return categoriesAsync.when(
           loading: () =>
               const Scaffold(body: Center(child: CircularProgressIndicator())),
           error: (error, stackTrace) => _DashboardErrorView(
-            onRetry: () => ref.invalidate(categoriesStreamProvider(householdId)),
+            onRetry: () =>
+                ref.invalidate(categoriesStreamProvider(householdId)),
           ),
           data: (categories) {
-            final statistics = ref.watch(
-              dashboardStatisticsProvider(
-                DashboardStatisticsInput(
-                  transactions: transactions,
-                  monthlyTransactions: monthlyTransactions,
-                  categories: categories,
-                  chartType: _chartType,
-                ),
-              ),
+            final budgetsAsync = ref.watch(
+              budgetsByMonthProvider(budgetParams),
             );
 
-            return Scaffold(
-              appBar: AppBar(title: const Text('Tổng quan')),
-              body: ListView(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.md,
-                  AppSpacing.sm,
-                  AppSpacing.md,
-                  AppSpacing.lg,
-                ),
-                children: [
-                  _BalanceHero(balance: summary.balance),
-                  const SizedBox(height: AppSpacing.md),
-                  _MonthlySummaryRow(
-                    income: summary.income,
-                    expense: summary.expense,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _BudgetProgressCard(
-                    monthlyBudget: monthlyBudget,
-                    monthlyExpense: summary.expense,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _CategoryPieCard(
-                    chartType: _chartType,
-                    items: statistics.chartItems,
-                    total: statistics.chartTotal,
-                    onTypeChanged: (type) =>
-                        _setLocalState(() => _chartType = type),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  _RecentTransactionsSection(
-                    transactions: statistics.recentTransactions,
-                    categoriesById: statistics.categoriesById,
-                  ),
-                ],
+            return budgetsAsync.when(
+              loading: () => const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
               ),
+              error: (error, stackTrace) => _DashboardErrorView(
+                onRetry: () =>
+                    ref.invalidate(budgetsByMonthProvider(budgetParams)),
+              ),
+              data: (budgets) {
+                final budgetSummary = ref.watch(
+                  monthlyBudgetSummaryProvider(
+                    BudgetSummaryInput(
+                      categories: categories,
+                      transactions: monthlyTransactions,
+                      budgets: budgets,
+                    ),
+                  ),
+                );
+                final statistics = ref.watch(
+                  dashboardStatisticsProvider(
+                    DashboardStatisticsInput(
+                      transactions: transactions,
+                      monthlyTransactions: monthlyTransactions,
+                      categories: categories,
+                      chartType: _chartType,
+                    ),
+                  ),
+                );
+
+                return Scaffold(
+                  appBar: AppBar(title: const Text('Tổng quan')),
+                  body: ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.md,
+                      AppSpacing.sm,
+                      AppSpacing.md,
+                      AppSpacing.lg,
+                    ),
+                    children: [
+                      _BalanceHero(balance: summary.balance),
+                      const SizedBox(height: AppSpacing.md),
+                      _MonthlySummaryRow(
+                        income: summary.income,
+                        expense: summary.expense,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      _BudgetProgressCard(
+                        month: currentMonth,
+                        summary: budgetSummary,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      _CategoryPieCard(
+                        chartType: _chartType,
+                        items: statistics.chartItems,
+                        total: statistics.chartTotal,
+                        onTypeChanged: (type) =>
+                            _setLocalState(() => _chartType = type),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      _RecentTransactionsSection(
+                        transactions: statistics.recentTransactions,
+                        categoriesById: statistics.categoriesById,
+                      ),
+                    ],
+                  ),
+                );
+              },
             );
           },
         );
@@ -281,31 +316,31 @@ class _MonthlySummaryCard extends StatelessWidget {
 }
 
 class _BudgetProgressCard extends StatelessWidget {
-  _BudgetProgressCard({
-    required this.monthlyBudget,
-    required this.monthlyExpense,
-  });
+  _BudgetProgressCard({required this.month, required this.summary});
 
-  final int? monthlyBudget;
-  final double monthlyExpense;
+  final DateTime month;
+  final MonthlyBudgetSummary summary;
   final _currencyFormat = NumberFormat.currency(
     locale: 'vi_VN',
     symbol: 'đ',
     decimalDigits: 0,
   );
+  final _monthFormat = DateFormat('MM/yyyy', 'vi_VN');
 
   @override
   Widget build(BuildContext context) {
-    final budget = monthlyBudget ?? 0;
-    final hasBudget = budget > 0;
-    final ratio = hasBudget ? (monthlyExpense / budget).clamp(0.0, 1.0) : 0.0;
-    final remaining = budget - monthlyExpense;
+    final hasBudget = summary.totalBudget > 0;
+    final ratio = hasBudget ? summary.usedPercent.clamp(0.0, 1.0) : 0.0;
     final colorScheme = Theme.of(context).colorScheme;
     final progressColor = !hasBudget
         ? colorScheme.primary
-        : remaining >= 0
-        ? const Color(0xFF0F8B6F)
-        : colorScheme.error;
+        : summary.remainingBudget < 0
+        ? colorScheme.error
+        : ratio >= 0.8
+        ? const Color(0xFFCA8A04)
+        : const Color(0xFF0F8B6F);
+    final overBudgetStatuses = summary.overBudgetStatuses;
+    final warningStatuses = summary.warningStatuses;
 
     return Card(
       child: Padding(
@@ -328,28 +363,39 @@ class _BudgetProgressCard extends StatelessWidget {
                 TextButton(
                   onPressed: () {
                     if (context.mounted) {
-                      context.go(AppRoutes.profile);
+                      context.go(AppRoutes.budgets);
                     }
                   },
-                  child: Text(hasBudget ? 'Chỉnh' : 'Đặt'),
+                  child: const Text('Quản lý'),
                 ),
               ],
+            ),
+            Text(
+              'Tháng ${_monthFormat.format(month)}',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: AppSpacing.sm),
             Row(
               children: [
                 Expanded(
                   child: _BudgetMetric(
-                    label: 'Đã chi',
-                    value: _currencyFormat.format(monthlyExpense),
+                    label: 'Tổng ngân sách',
+                    value: _currencyFormat.format(summary.totalBudget),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: _BudgetMetric(
-                    label: hasBudget ? 'Còn lại' : 'Mục tiêu',
+                    label: 'Đã chi',
+                    value: _currencyFormat.format(summary.totalExpense),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: _BudgetMetric(
+                    label: 'Còn lại',
                     value: hasBudget
-                        ? _currencyFormat.format(remaining)
+                        ? _currencyFormat.format(summary.remainingBudget)
                         : 'Chưa đặt',
                   ),
                 ),
@@ -365,8 +411,67 @@ class _BudgetProgressCard extends StatelessWidget {
                 backgroundColor: colorScheme.surfaceContainerHighest,
               ),
             ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              hasBudget
+                  ? 'Đã dùng ${(summary.usedPercent * 100).round()}% ngân sách.'
+                  : 'Ngân sách tổng được tính từ ngân sách từng danh mục chi.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (overBudgetStatuses.isNotEmpty ||
+                warningStatuses.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.md),
+              for (final status in overBudgetStatuses.take(3))
+                _BudgetAlertRow(
+                  color: colorScheme.error,
+                  icon: Icons.warning_amber_outlined,
+                  text:
+                      '${status.category.name} đã vượt ${_currencyFormat.format(status.spentAmount - status.budgetAmount)}',
+                ),
+              for (final status in warningStatuses.take(3))
+                _BudgetAlertRow(
+                  color: const Color(0xFFCA8A04),
+                  icon: Icons.info_outline,
+                  text:
+                      '${status.category.name} đã dùng ${(status.usedPercent * 100).round()}%',
+                ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _BudgetAlertRow extends StatelessWidget {
+  const _BudgetAlertRow({
+    required this.color,
+    required this.icon,
+    required this.text,
+  });
+
+  final Color color;
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xs),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -671,12 +776,13 @@ class _RecentTransactionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final category = this.category;
     final color = category == null
         ? CategoryVisuals.toneForType(transaction.type)
-        : CategoryVisuals.colorFromHex(category!.color);
+        : CategoryVisuals.colorFromHex(category.color);
     final icon = category == null
         ? Icons.category_outlined
-        : CategoryVisuals.iconFromName(category!.icon);
+        : CategoryVisuals.iconFromName(category.icon);
     final prefix = transaction.type == TransactionType.income ? '+' : '-';
 
     return Card(
