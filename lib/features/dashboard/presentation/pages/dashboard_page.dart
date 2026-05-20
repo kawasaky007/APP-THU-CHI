@@ -12,6 +12,8 @@ import '../../../budgets/presentation/providers/budget_provider.dart';
 import '../../../budgets/presentation/providers/budget_summary_provider.dart';
 import '../../../categories/presentation/providers/category_provider.dart';
 import '../../../categories/presentation/widgets/category_visuals.dart';
+import '../../../profile/presentation/providers/profile_provider.dart';
+import '../../../transactions/presentation/models/transaction_view_data.dart';
 import '../../../transactions/presentation/providers/transaction_provider.dart';
 import '../providers/statistics_provider.dart';
 import '../providers/summary_provider.dart';
@@ -149,6 +151,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       _RecentTransactionsSection(
                         transactions: statistics.recentTransactions,
                         categoriesById: statistics.categoriesById,
+                        profilesById: ref.watch(profilesByIdProvider(householdId)),
+                        currentUserId: userId ?? '',
                       ),
                     ],
                   ),
@@ -716,10 +720,14 @@ class _RecentTransactionsSection extends StatelessWidget {
   const _RecentTransactionsSection({
     required this.transactions,
     required this.categoriesById,
+    required this.profilesById,
+    required this.currentUserId,
   });
 
   final List<Transaction> transactions;
   final Map<String, Category> categoriesById;
+  final Map<String, UserProfile> profilesById;
+  final String currentUserId;
 
   @override
   Widget build(BuildContext context) {
@@ -754,6 +762,11 @@ class _RecentTransactionsSection extends StatelessWidget {
             _RecentTransactionTile(
               transaction: transaction,
               category: categoriesById[transaction.categoryId],
+              creatorName: TransactionViewData.resolveCreatorName(
+                creatorUserId: transaction.userId,
+                currentUserId: currentUserId,
+                profilesById: profilesById,
+              ),
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
@@ -763,10 +776,15 @@ class _RecentTransactionsSection extends StatelessWidget {
 }
 
 class _RecentTransactionTile extends StatelessWidget {
-  _RecentTransactionTile({required this.transaction, required this.category});
+  _RecentTransactionTile({
+    required this.transaction,
+    required this.category,
+    required this.creatorName,
+  });
 
   final Transaction transaction;
   final Category? category;
+  final String creatorName;
   final _currencyFormat = NumberFormat.currency(
     locale: 'vi_VN',
     symbol: 'đ',
@@ -792,7 +810,19 @@ class _RecentTransactionTile extends StatelessWidget {
           child: Icon(icon, color: color),
         ),
         title: Text(category?.name ?? transaction.title),
-        subtitle: Text(_dateFormat.format(transaction.transactionDate)),
+        subtitle: Row(
+          children: [
+            Text(_dateFormat.format(transaction.transactionDate)),
+            const SizedBox(width: 6),
+            Text(
+              '• $creatorName',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
         trailing: Text(
           '$prefix${_currencyFormat.format(transaction.amount)}',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(

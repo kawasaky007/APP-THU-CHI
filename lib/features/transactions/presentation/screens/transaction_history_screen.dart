@@ -10,6 +10,8 @@ import '../../../../shared/widgets/app_feedback.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../categories/presentation/providers/category_provider.dart';
 import '../../../categories/presentation/widgets/category_visuals.dart';
+import '../../../profile/presentation/providers/profile_provider.dart';
+import '../models/transaction_view_data.dart';
 import '../providers/transaction_provider.dart';
 
 class TransactionHistoryScreen extends ConsumerStatefulWidget {
@@ -261,6 +263,8 @@ class _MonthlyTab extends ConsumerWidget {
     );
     final categoriesAsync = ref.watch(categoriesStreamProvider(householdId));
     final categories = categoriesAsync.valueOrNull ?? const <Category>[];
+    final profilesById = ref.watch(profilesByIdProvider(householdId));
+    final currentUserId = ref.watch(currentUserIdProvider) ?? '';
 
     return Column(
       children: [
@@ -336,11 +340,18 @@ class _MonthlyTab extends ConsumerWidget {
                               categories,
                               transaction.categoryId,
                             );
+                            final creatorName =
+                                TransactionViewData.resolveCreatorName(
+                              creatorUserId: transaction.userId,
+                              currentUserId: currentUserId,
+                              profilesById: profilesById,
+                            );
                             return _TransactionHistoryTile(
                               key: ValueKey(transaction.id.trim()),
                               transaction: transaction,
                               category: category,
                               householdId: householdId,
+                              creatorName: creatorName,
                             );
                           },
                         ),
@@ -383,6 +394,8 @@ class _AllTransactionsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final categoriesAsync = ref.watch(categoriesStreamProvider(householdId));
     final categories = categoriesAsync.valueOrNull ?? const <Category>[];
+    final profilesById = ref.watch(profilesByIdProvider(householdId));
+    final currentUserId = ref.watch(currentUserIdProvider) ?? '';
 
     if (transactions.isEmpty && isLoadingMore) {
       return const Center(child: CircularProgressIndicator());
@@ -443,11 +456,18 @@ class _AllTransactionsTab extends ConsumerWidget {
                     categories,
                     transaction.categoryId,
                   );
+                  final creatorName =
+                      TransactionViewData.resolveCreatorName(
+                    creatorUserId: transaction.userId,
+                    currentUserId: currentUserId,
+                    profilesById: profilesById,
+                  );
                   return _TransactionHistoryTile(
                     key: ValueKey(transaction.id.trim()),
                     transaction: transaction,
                     category: category,
                     householdId: householdId,
+                    creatorName: creatorName,
                   );
                 },
               ),
@@ -655,11 +675,13 @@ class _TransactionHistoryTile extends ConsumerWidget {
     required this.transaction,
     required this.category,
     required this.householdId,
+    required this.creatorName,
   });
 
   final Transaction transaction;
   final Category? category;
   final String householdId;
+  final String creatorName;
 
   final _currencyFormat = NumberFormat.currency(
     locale: 'vi_VN',
@@ -678,67 +700,137 @@ class _TransactionHistoryTile extends ConsumerWidget {
         ? Icons.category_outlined
         : CategoryVisuals.iconFromName(category.icon);
     final prefix = transaction.type == TransactionType.income ? '+' : '-';
+    final amountColor = transaction.type == TransactionType.income
+        ? const Color(0xFF0F8B6F)
+        : const Color(0xFFC2410C);
     final note = transaction.note?.trim();
+    final textTheme = Theme.of(context).textTheme;
 
     return Card(
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm,
+      key: ValueKey(transaction.id),
+      elevation: 0,
+      color: const Color(0xFFFAFCFA),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: Theme.of(context).colorScheme.outlineVariant.withValues(
+            alpha: 0.5,
+          ),
         ),
-        leading: CircleAvatar(
-          backgroundColor: color.withValues(alpha: 0.14),
-          child: Icon(icon, color: color),
-        ),
-        title: Row(
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: color.withValues(alpha: 0.12),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                category?.name ?? transaction.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    category?.name ?? transaction.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_dateFormat.format(transaction.transactionDate)} · $creatorName',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (note != null && note.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      note,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              '$prefix${_currencyFormat.format(transaction.amount)}',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: color,
-                fontWeight: FontWeight.w900,
-              ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 120),
+                  child: Text(
+                    '$prefix${_currencyFormat.format(transaction.amount)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: amountColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                SizedBox(
+                  height: 32,
+                  width: 32,
+                  child: PopupMenuButton<String>(
+                    padding: EdgeInsets.zero,
+                    iconSize: 18,
+                    icon: Icon(
+                      Icons.more_vert,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    onSelected: (value) {
+                      if (value == 'edit') {
+                        _editTransaction(context);
+                      } else if (value == 'delete') {
+                        _confirmDelete(context, ref);
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.edit_outlined, size: 18),
+                            SizedBox(width: 8),
+                            Text('Sửa'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.delete_outline, size: 18),
+                            SizedBox(width: 8),
+                            Text('Xóa'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: AppSpacing.xs),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(_dateFormat.format(transaction.transactionDate)),
-              if (note != null && note.isNotEmpty) ...[
-                const SizedBox(height: AppSpacing.xs),
-                Text(note, maxLines: 2, overflow: TextOverflow.ellipsis),
-              ],
-            ],
-          ),
-        ),
-        trailing: SizedBox(
-          width: 96,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              IconButton(
-                tooltip: 'Sửa giao dịch',
-                onPressed: () => _editTransaction(context),
-                icon: const Icon(Icons.edit_outlined),
-              ),
-              IconButton(
-                tooltip: 'Xóa giao dịch',
-                onPressed: () => _confirmDelete(context, ref),
-                icon: const Icon(Icons.delete_outline),
-              ),
-            ],
-          ),
         ),
       ),
     );
