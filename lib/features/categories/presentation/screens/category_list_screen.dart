@@ -21,6 +21,8 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final authState = ref.watch(authControllerProvider);
     final householdId = ref.watch(currentHouseholdIdProvider);
     final userId = authState.user?.id ?? authState.profile?.id;
@@ -31,7 +33,12 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
     debugPrint('CATEGORY REALTIME UI: householdId=$householdId userId=$userId');
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Danh mục thu/chi')),
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: const Text('Danh mục thu/chi'),
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
+      ),
       floatingActionButton: householdId == null
           ? null
           : FloatingActionButton.extended(
@@ -45,105 +52,108 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
               icon: const Icon(Icons.add),
               label: const Text('Thêm'),
             ),
-      body: householdId == null
-          ? const _NoHouseholdView()
-          : categoriesAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stackTrace) {
-                return _CategoryErrorView(
-                  message: 'Không thể tải danh mục. Vui lòng thử lại.',
-                  onRetry: () =>
-                      ref.invalidate(categoriesStreamProvider(householdId)),
-                );
-              },
-              data: (categories) {
-                final filteredCategories = categories
-                    .where((category) => category.type == _selectedType)
-                    .toList();
+      body: ColoredBox(
+        color: theme.scaffoldBackgroundColor,
+        child: householdId == null
+            ? const _NoHouseholdView()
+            : categoriesAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, stackTrace) {
+                  return _CategoryErrorView(
+                    message: 'Không thể tải danh mục. Vui lòng thử lại.',
+                    onRetry: () =>
+                        ref.invalidate(categoriesStreamProvider(householdId)),
+                  );
+                },
+                data: (categories) {
+                  final filteredCategories = categories
+                      .where((category) => category.type == _selectedType)
+                      .toList();
 
-                return RefreshIndicator(
-                  onRefresh: () => _refresh(householdId),
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(0, 0, 0, 96),
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        child: SegmentedButton<TransactionType>(
-                          segments: const [
-                            ButtonSegment(
-                              value: TransactionType.expense,
-                              icon: Icon(Icons.trending_down),
-                              label: Text('Chi'),
-                            ),
-                            ButtonSegment(
-                              value: TransactionType.income,
-                              icon: Icon(Icons.trending_up),
-                              label: Text('Thu'),
-                            ),
-                          ],
-                          selected: {_selectedType},
-                          onSelectionChanged: (selectedValues) {
-                            _setLocalState(
-                              () => _selectedType = selectedValues.first,
-                            );
-                          },
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md,
-                        ),
-                        child: _CategorySummary(
-                          type: _selectedType,
-                          count: filteredCategories.length,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      if (filteredCategories.isEmpty)
-                        SizedBox(
-                          height: MediaQuery.sizeOf(context).height * 0.42,
-                          child: _EmptyCategoryView(
-                            type: _selectedType,
-                            onCreate: () => _showCategoryForm(
-                              existingCategories: categories,
-                              initialType: _selectedType,
-                            ),
+                  return RefreshIndicator(
+                    onRefresh: () => _refresh(householdId),
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(0, 0, 0, 96),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(AppSpacing.md),
+                          child: SegmentedButton<TransactionType>(
+                            segments: const [
+                              ButtonSegment(
+                                value: TransactionType.expense,
+                                icon: Icon(Icons.trending_down),
+                                label: Text('Chi'),
+                              ),
+                              ButtonSegment(
+                                value: TransactionType.income,
+                                icon: Icon(Icons.trending_up),
+                                label: Text('Thu'),
+                              ),
+                            ],
+                            selected: {_selectedType},
+                            onSelectionChanged: (selectedValues) {
+                              _setLocalState(
+                                () => _selectedType = selectedValues.first,
+                              );
+                            },
                           ),
-                        )
-                      else
+                        ),
                         Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: AppSpacing.md,
                           ),
-                          child: Column(
-                            children: [
-                              for (
-                                var index = 0;
-                                index < filteredCategories.length;
-                                index++
-                              ) ...[
-                                _CategoryTile(
-                                  category: filteredCategories[index],
-                                  onEdit: () => _showCategoryForm(
-                                    existingCategories: categories,
-                                    category: filteredCategories[index],
-                                  ),
-                                  onDelete: () => _confirmDeleteCategory(
-                                    filteredCategories[index],
-                                  ),
-                                ),
-                                if (index != filteredCategories.length - 1)
-                                  const SizedBox(height: AppSpacing.sm),
-                              ],
-                            ],
+                          child: _CategorySummary(
+                            type: _selectedType,
+                            count: filteredCategories.length,
                           ),
                         ),
-                    ],
-                  ),
-                );
-              },
-            ),
+                        const SizedBox(height: AppSpacing.sm),
+                        if (filteredCategories.isEmpty)
+                          SizedBox(
+                            height: MediaQuery.sizeOf(context).height * 0.42,
+                            child: _EmptyCategoryView(
+                              type: _selectedType,
+                              onCreate: () => _showCategoryForm(
+                                existingCategories: categories,
+                                initialType: _selectedType,
+                              ),
+                            ),
+                          )
+                        else
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.md,
+                            ),
+                            child: Column(
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < filteredCategories.length;
+                                  index++
+                                ) ...[
+                                  _CategoryTile(
+                                    category: filteredCategories[index],
+                                    onEdit: () => _showCategoryForm(
+                                      existingCategories: categories,
+                                      category: filteredCategories[index],
+                                    ),
+                                    onDelete: () => _confirmDeleteCategory(
+                                      filteredCategories[index],
+                                    ),
+                                  ),
+                                  if (index != filteredCategories.length - 1)
+                                    const SizedBox(height: AppSpacing.sm),
+                                ],
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+      ),
     );
   }
 
@@ -284,10 +294,15 @@ class _CategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = CategoryVisuals.colorFromHex(category.color);
-    final typeLabel = CategoryVisuals.labelForType(category.type);
-
+    final colorScheme = Theme.of(context).colorScheme;
     return Card(
+      color: Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
       child: ListTile(
+        tileColor: Colors.transparent,
         leading: CircleAvatar(
           backgroundColor: color.withValues(alpha: 0.14),
           child: Icon(
@@ -296,9 +311,6 @@ class _CategoryTile extends StatelessWidget {
           ),
         ),
         title: Text(category.name),
-        subtitle: Text(
-          category.isDefault ? '$typeLabel - Mặc định' : typeLabel,
-        ),
         trailing: MenuAnchor(
           builder: (context, controller, child) {
             return IconButton(

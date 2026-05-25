@@ -31,6 +31,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   late TransactionType _type;
   late DateTime _transactionDate;
   String? _selectedCategoryId;
+  String? _categoryErrorMessage;
 
   bool get _isEditing => widget.transaction != null;
 
@@ -77,6 +78,37 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
       appBar: AppBar(
         title: Text(_isEditing ? 'Sửa giao dịch' : 'Thêm giao dịch'),
       ),
+      resizeToAvoidBottomInset: true,
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.sm,
+            AppSpacing.md,
+            AppSpacing.md,
+          ),
+          child: FilledButton.icon(
+            onPressed: actionState.isLoading || householdId == null || userId == null
+                ? null
+                : () => _submit(
+                    householdId: householdId,
+                    userId: userId,
+                    categories: categoriesAsync.valueOrNull ?? const [],
+                  ),
+            icon: actionState.isLoading
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(_isEditing ? Icons.save_outlined : Icons.check_circle_outline),
+            label: Text(_isEditing ? 'Lưu thay đổi' : 'Lưu giao dịch'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(54),
+            ),
+          ),
+        ),
+      ),
       body: categoriesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => _FormLoadError(
@@ -85,6 +117,10 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
               : () => _retryCategories(householdId),
         ),
         data: (categories) {
+          /// Lấy chiều cao bàn phím để form scroll khi keyboard mở
+          final viewInsets = MediaQuery.viewInsetsOf(context);
+          final theme = Theme.of(context);
+          final colorScheme = theme.colorScheme;
           final typedCategories = categories
               .where((category) => category.type == _type)
               .toList();
@@ -93,30 +129,77 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
             _selectedCategoryId,
           );
 
+          if (_selectedCategoryId != null && selectedCategory == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              _setLocalState(() => _selectedCategoryId = null);
+            });
+          }
+
           return Form(
             key: _formKey,
-            child: ListView(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              children: [
+            child: GestureDetector(
+              /// Ấn ra ngoài form → tắt bàn phím
+              onTap: () {
+                FocusScope.of(context).unfocus();
+              },
+              child: SingleChildScrollView(
+                /// Cho phép scroll khi keyboard xuất hiện
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  AppSpacing.md,
+                  AppSpacing.md,
+                  /// Padding dưới cùng để tránh nội dung bị che bởi bàn phím
+                  AppSpacing.xl + viewInsets.bottom,
+                ),
+                child: Column(
+                  children: [
                 if (actionState.errorMessage case final errorMessage?) ...[
                   _TransactionFormError(message: errorMessage),
                   const SizedBox(height: AppSpacing.md),
                 ],
-                TextFormField(
-                  controller: _amountController,
-                  enabled: !actionState.isLoading,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                  inputFormatters: const [CurrencyInputFormatter()],
-                  decoration: const InputDecoration(
-                    labelText: 'Số tiền',
-                    prefixIcon: Icon(Icons.payments_outlined),
-                    suffixText: 'đ',
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Số tiền',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        TextFormField(
+                          controller: _amountController,
+                          enabled: !actionState.isLoading,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.next,
+                          inputFormatters: const [CurrencyInputFormatter()],
+                          decoration: InputDecoration(
+                            hintText: '0',
+                            suffixText: 'đ',
+                            suffixStyle: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          style: theme.textTheme.displaySmall?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            color: colorScheme.onSurface,
+                            height: 1.1,
+                          ),
+                          validator: _validateAmount,
+                          onChanged: (_) {
+                            ref.read(transactionActionProvider.notifier).clearError();
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                  validator: _validateAmount,
-                  onChanged: (_) {
-                    ref.read(transactionActionProvider.notifier).clearError();
-                  },
                 ),
                 const SizedBox(height: AppSpacing.md),
                 SegmentedButton<TransactionType>(
@@ -139,111 +222,144 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                           _setLocalState(() {
                             _type = selectedValues.first;
                             _selectedCategoryId = null;
+                            _categoryErrorMessage = null;
                           });
-                          ref
-                              .read(transactionActionProvider.notifier)
-                              .clearError();
+                          ref.read(transactionActionProvider.notifier).clearError();
                         },
                 ),
                 const SizedBox(height: AppSpacing.md),
-                DropdownButtonFormField<String>(
-                  key: ValueKey('${_type.value}-${selectedCategory?.id}'),
-                  isExpanded: true,
-                  initialValue: selectedCategory?.id,
-                  items: [
-                    for (final category in typedCategories)
-                      DropdownMenuItem(
-                        value: category.id,
-                        child: _CategoryDropdownLabel(category: category),
-                      ),
-                  ],
-                  onChanged: actionState.isLoading
-                      ? null
-                      : (value) {
-                          _setLocalState(() => _selectedCategoryId = value);
-                          ref
-                              .read(transactionActionProvider.notifier)
-                              .clearError();
-                        },
-                  decoration: InputDecoration(
-                    labelText: 'Danh mục',
-                    prefixIcon: const Icon(Icons.category_outlined),
-                    helperText: typedCategories.isEmpty
-                        ? 'Chưa có danh mục ${_typeLabel(_type).toLowerCase()}'
-                        : null,
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Vui lòng chọn danh mục.';
-                    }
-                    return null;
-                  },
-                ),
-                if (typedCategories.isEmpty) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: actionState.isLoading
-                          ? null
-                          : () {
-                              if (context.mounted) {
-                                context.push(AppRoutes.categories);
-                              }
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Chọn danh mục ${_typeLabel(_type).toLowerCase()}',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            if (typedCategories.isEmpty)
+                              TextButton.icon(
+                                onPressed: actionState.isLoading
+                                    ? null
+                                    : () {
+                                        if (context.mounted) {
+                                          context.push(AppRoutes.categories);
+                                        }
+                                      },
+                                icon: const Icon(Icons.add),
+                                label: const Text('Tạo mới'),
+                              ),
+                          ],
+                        ),
+                        if (typedCategories.isEmpty) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            'Chưa có danh mục ${_typeLabel(_type).toLowerCase()}. Hãy tạo danh mục để tiếp tục.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ] else ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final width = constraints.maxWidth;
+                              final crossAxisCount = width >= 520
+                                  ? 4
+                                  : width >= 360
+                                  ? 3
+                                  : 2;
+
+                              return GridView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: typedCategories.length,
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: crossAxisCount,
+                                  mainAxisSpacing: AppSpacing.sm,
+                                  crossAxisSpacing: AppSpacing.sm,
+                                  childAspectRatio: 1.18,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final category = typedCategories[index];
+                                  return _CategoryGridItem(
+                                    category: category,
+                                    selected: _selectedCategoryId == category.id,
+                                    enabled: !actionState.isLoading,
+                                    onTap: () {
+                                      _setLocalState(() {
+                                        _selectedCategoryId = category.id;
+                                        _categoryErrorMessage = null;
+                                      });
+                                      ref
+                                          .read(transactionActionProvider.notifier)
+                                          .clearError();
+                                    },
+                                  );
+                                },
+                              );
                             },
-                      icon: const Icon(Icons.add),
-                      label: const Text('Tạo danh mục'),
+                          ),
+                          if (_categoryErrorMessage != null) ...[
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              _categoryErrorMessage!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.error,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ],
                     ),
                   ),
-                ],
+                ),
                 const SizedBox(height: AppSpacing.md),
-                _DatePickerField(
+                _DatePickerCard(
                   label: _dateFormat.format(_transactionDate),
                   enabled: !actionState.isLoading,
                   onTap: _pickDate,
                 ),
                 const SizedBox(height: AppSpacing.md),
-                TextFormField(
-                  controller: _noteController,
-                  enabled: !actionState.isLoading,
-                  minLines: 3,
-                  maxLines: 5,
-                  maxLength: 240,
-                  textInputAction: TextInputAction.newline,
-                  decoration: const InputDecoration(
-                    labelText: 'Ghi chú',
-                    alignLabelWithHint: true,
-                    prefixIcon: Icon(Icons.notes_outlined),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: TextFormField(
+                      controller: _noteController,
+                      enabled: !actionState.isLoading,
+                      minLines: 3,
+                      maxLines: 5,
+                      maxLength: 240,
+                      textInputAction: TextInputAction.newline,
+                      decoration: const InputDecoration(
+                        labelText: 'Ghi chú',
+                        alignLabelWithHint: true,
+                        hintText: 'Ví dụ: Mua đồ ăn cuối tuần',
+                        border: InputBorder.none,
+                        prefixIcon: Icon(Icons.notes_outlined),
+                      ),
+                      onChanged: (_) {
+                        ref.read(transactionActionProvider.notifier).clearError();
+                      },
+                    ),
                   ),
-                  onChanged: (_) {
-                    ref.read(transactionActionProvider.notifier).clearError();
-                  },
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                FilledButton.icon(
-                  onPressed:
-                      actionState.isLoading ||
-                          householdId == null ||
-                          userId == null
-                      ? null
-                      : () => _submit(
-                          householdId: householdId,
-                          userId: userId,
-                          categories: typedCategories,
-                        ),
-                  icon: actionState.isLoading
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(_isEditing ? Icons.save_outlined : Icons.add),
-                  label: Text(_isEditing ? 'Lưu giao dịch' : 'Thêm giao dịch'),
                 ),
               ],
             ),
-          );
-        },
-      ),
+          ),
+            ),
+        );
+      },
+    ),
     );
   }
 
@@ -277,8 +393,22 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
       return;
     }
 
-    final category = _selectedCategory(categories, _selectedCategoryId);
+    if (_selectedCategoryId == null || _selectedCategoryId!.isEmpty) {
+      _setLocalState(() {
+        _categoryErrorMessage = 'Vui lòng chọn danh mục.';
+      });
+      return;
+    }
+
+    final typedCategories = categories
+        .where((category) => category.type == _type)
+        .toList();
+
+    final category = _selectedCategory(typedCategories, _selectedCategoryId);
     if (category == null) {
+      _setLocalState(() {
+        _categoryErrorMessage = 'Danh mục đã chọn không hợp lệ. Vui lòng chọn lại.';
+      });
       return;
     }
 
@@ -378,6 +508,35 @@ class _DatePickerField extends StatelessWidget {
   }
 }
 
+class _DatePickerCard extends StatelessWidget {
+  const _DatePickerCard({
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
+        child: _DatePickerField(
+          label: label,
+          enabled: enabled,
+          onTap: onTap,
+        ),
+      ),
+    );
+  }
+}
+
 class _TransactionFormError extends StatelessWidget {
   const _TransactionFormError({required this.message});
 
@@ -410,37 +569,85 @@ class _TransactionFormError extends StatelessWidget {
   }
 }
 
-class _CategoryDropdownLabel extends StatelessWidget {
-  const _CategoryDropdownLabel({required this.category});
+class _CategoryGridItem extends StatelessWidget {
+  const _CategoryGridItem({
+    required this.category,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
 
   final Category category;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final color = CategoryVisuals.colorFromHex(category.color);
+    final icon = CategoryVisuals.iconFromName(category.icon);
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CircleAvatar(
-          radius: 14,
-          backgroundColor: color.withValues(alpha: 0.14),
-          child: Icon(
-            CategoryVisuals.iconFromName(category.icon),
-            size: 16,
-            color: color,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: selected
+                ? color.withValues(alpha: 0.14)
+                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.36),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? color : colorScheme.outlineVariant,
+              width: selected ? 1.8 : 1,
+            ),
+          ),
+          child: Stack(
+            children: [
+              Align(
+                alignment: Alignment.topRight,
+                child: AnimatedOpacity(
+                  opacity: selected ? 1 : 0,
+                  duration: const Duration(milliseconds: 160),
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.check, size: 12, color: Colors.white),
+                  ),
+                ),
+              ),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: color.withValues(alpha: 0.18),
+                    child: Icon(icon, color: color, size: 20),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    category.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: AppSpacing.sm),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 220),
-          child: Text(
-            category.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

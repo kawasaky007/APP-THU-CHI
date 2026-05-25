@@ -67,6 +67,8 @@ class _TransactionHistoryScreenState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final householdId = ref.watch(currentHouseholdIdProvider);
 
     if (householdId == null) {
@@ -76,8 +78,11 @@ class _TransactionHistoryScreenState
     }
 
     return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Lịch sử giao dịch'),
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -86,28 +91,31 @@ class _TransactionHistoryScreenState
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _MonthlyTab(
-            householdId: householdId,
-            selectedMonth: _selectedMonth,
-            currencyFormat: _currencyFormat,
-            monthFormat: _monthFormat,
-            onPreviousMonth: _goToPreviousMonth,
-            onNextMonth: _goToNextMonth,
-            onPickMonth: _pickMonth,
-          ),
-          _AllTransactionsTab(
-            householdId: householdId,
-            transactions: _allTransactions,
-            isLoadingMore: _isLoadingMore,
-            hasMore: _hasMore,
-            onLoadMore: _loadMore,
-            onRefresh: _refreshAll,
-            currencyFormat: _currencyFormat,
-          ),
-        ],
+      body: ColoredBox(
+        color: theme.scaffoldBackgroundColor,
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            _MonthlyTab(
+              householdId: householdId,
+              selectedMonth: _selectedMonth,
+              currencyFormat: _currencyFormat,
+              monthFormat: _monthFormat,
+              onPreviousMonth: _goToPreviousMonth,
+              onNextMonth: _goToNextMonth,
+              onPickMonth: _pickMonth,
+            ),
+            _AllTransactionsTab(
+              householdId: householdId,
+              transactions: _allTransactions,
+              isLoadingMore: _isLoadingMore,
+              hasMore: _hasMore,
+              onLoadMore: _loadMore,
+              onRefresh: _refreshAll,
+              currencyFormat: _currencyFormat,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -709,7 +717,7 @@ class _TransactionHistoryTile extends ConsumerWidget {
     return Card(
       key: ValueKey(transaction.id),
       elevation: 0,
-      color: const Color(0xFFFAFCFA),
+      color: Theme.of(context).cardColor,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(

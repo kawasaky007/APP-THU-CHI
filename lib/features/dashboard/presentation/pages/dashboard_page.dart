@@ -31,6 +31,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   TransactionType _chartType = TransactionType.expense;
+  static const _mintFabColor = Color(0xFF00D1A7);
 
   @override
   Widget build(BuildContext context) {
@@ -120,6 +121,22 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
                 return Scaffold(
                   appBar: AppBar(title: const Text('Tổng quan')),
+                  floatingActionButton: FloatingActionButton(
+                    tooltip: 'Thêm giao dịch',
+                    backgroundColor: _mintFabColor,
+                    foregroundColor: const Color(0xFF00382D),
+                    elevation: 5,
+                    highlightElevation: 8,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    onPressed: () {
+                      if (context.mounted) {
+                        context.push(AppRoutes.addTransaction);
+                      }
+                    },
+                    child: const Icon(Icons.add, size: 28),
+                  ),
                   body: ListView(
                     padding: const EdgeInsets.fromLTRB(
                       AppSpacing.md,
