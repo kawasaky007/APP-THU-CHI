@@ -115,6 +115,16 @@ final monthlyBudgetSummaryProvider =
           ),
       ];
 
+      // Sort by budget display_order (budgeted first, then un-budgeted)
+      statuses.sort((a, b) {
+        if (a.hasBudget && b.hasBudget) {
+          return a.budget!.displayOrder.compareTo(b.budget!.displayOrder);
+        }
+        if (a.hasBudget && !b.hasBudget) return -1;
+        if (!a.hasBudget && b.hasBudget) return 1;
+        return 0;
+      });
+
       final totalBudget = statuses.fold<double>(
         0,
         (sum, status) => sum + _finiteAmount(status.budgetAmount),

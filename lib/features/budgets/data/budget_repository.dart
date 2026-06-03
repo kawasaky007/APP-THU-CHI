@@ -57,7 +57,7 @@ class BudgetRepository {
           .eq('household_id', cleanHouseholdId)
           .eq('month', month)
           .eq('year', year)
-          .order('created_at', ascending: true);
+          .order('display_order', ascending: true);
 
       final budgets = _parseBudgetRows(_asJsonList(rows));
       budgets.sort(_compareBudget);
@@ -125,6 +125,144 @@ class BudgetRepository {
         multipleMessage:
             'Dữ liệu ngân sách bị trùng khi xóa. Vui lòng kiểm tra database.',
       );
+    });
+  }
+
+  Future<void> updateDisplayOrders(List<Budget> budgets) {
+    return _guard('Cập nhật thứ tự hiển thị', () async {
+      if (budgets.isEmpty) return;
+
+      final updates = budgets.map((budget) => {
+        'id': budget.id,
+        'household_id': budget.householdId,
+        'category_id': budget.categoryId,
+        'month': budget.month,
+        'year': budget.year,
+        'amount': budget.amount,
+        'display_order': budget.displayOrder,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).toList();
+
+      await _client
+          .from(SupabaseTables.budgets)
+          .upsert(updates, onConflict: 'household_id,category_id,month,year');
+    });
+  }
+
+  /// Returns true if the given month already has at least one budget.
+  Future<bool> hasBudgetsForMonth({
+    required String householdId,
+    required int month,
+    required int year,
+  }) {
+    return _guard('Kiểm tra ngân sách tháng', () async {
+      final cleanHouseholdId = _normalizeHouseholdId(householdId);
+      _validateMonthYear(month: month, year: year);
+
+      final rows = await _client
+          .from(SupabaseTables.budgets)
+          .select('id')
+          .eq('household_id', cleanHouseholdId)
+          .eq('month', month)
+          .eq('year', year)
+          .limit(1);
+
+      final exists = _asJsonList(rows).isNotEmpty;
+      debugPrint('[BudgetClone] hasBudgetsForMonth($month/$year): $exists');
+      return exists;
+    });
+  }
+
+  /// Finds the latest (month, year) that has budgets before the given target.
+  /// Returns null if no previous budgets exist.
+  Future<({int month, int year})?> findLatestBudgetMonthBefore({
+    required String householdId,
+    required int month,
+    required int year,
+  }) {
+    return _guard('Tìm tháng ngân sách gần nhất', () async {
+      final cleanHouseholdId = _normalizeHouseholdId(householdId);
+      _validateMonthYear(month: month, year: year);
+
+      // Strategy: query budgets from previous years first, then same year
+      // with earlier months. This avoids complex or()/and() PostgREST syntax
+      // that may not work across all Supabase versions.
+
+      // 1. Try same year, earlier month
+      var rows = await _client
+          .from(SupabaseTables.budgets)
+          .select('month, year')
+          .eq('household_id', cleanHouseholdId)
+          .eq('year', year)
+          .lt('month', month)
+          .order('month', ascending: false)
+          .limit(1);
+
+      var list = _asJsonList(rows);
+      if (list.isNotEmpty) {
+        final row = list.first;
+        final foundMonth = _readInt(row['month']);
+        final foundYear = _readInt(row['year']);
+        if (foundMonth != null && foundYear != null) {
+          debugPrint(
+            '[BudgetClone] Found source in same year: $foundMonth/$foundYear',
+          );
+          return (month: foundMonth, year: foundYear);
+        }
+      }
+
+      // 2. Try previous years
+      rows = await _client
+          .from(SupabaseTables.budgets)
+          .select('month, year')
+          .eq('household_id', cleanHouseholdId)
+          .lt('year', year)
+          .order('year', ascending: false)
+          .order('month', ascending: false)
+          .limit(1);
+
+      list = _asJsonList(rows);
+      if (list.isEmpty) {
+        debugPrint('[BudgetClone] No previous budget months found');
+        return null;
+      }
+
+      final row = list.first;
+      final foundMonth = _readInt(row['month']);
+      final foundYear = _readInt(row['year']);
+      if (foundMonth == null || foundYear == null) return null;
+
+      debugPrint(
+        '[BudgetClone] Found source in previous year: $foundMonth/$foundYear',
+      );
+      return (month: foundMonth, year: foundYear);
+    });
+  }
+
+  /// Inserts cloned budgets for a target month.
+  Future<void> insertClonedBudgets(List<Budget> budgets) {
+    return _guard('Sao chép ngân sách', () async {
+      if (budgets.isEmpty) return;
+
+      final inserts = budgets.map((budget) => {
+        'household_id': budget.householdId,
+        'category_id': budget.categoryId,
+        'month': budget.month,
+        'year': budget.year,
+        'amount': budget.amount,
+        'display_order': budget.displayOrder,
+        if (budget.createdBy != null) 'created_by': budget.createdBy,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).toList();
+
+      debugPrint('[BudgetClone] Insert payload: ${inserts.length} rows');
+      debugPrint('[BudgetClone] First row: ${inserts.first}');
+
+      await _client
+          .from(SupabaseTables.budgets)
+          .upsert(inserts, onConflict: 'household_id,category_id,month,year');
+
+      debugPrint('[BudgetClone] Supabase upsert completed');
     });
   }
 
@@ -312,6 +450,10 @@ int? _readInt(Object? value) {
 }
 
 int _compareBudget(Budget a, Budget b) {
+  final orderCompare = a.displayOrder.compareTo(b.displayOrder);
+  if (orderCompare != 0) {
+    return orderCompare;
+  }
   final yearCompare = a.year.compareTo(b.year);
   if (yearCompare != 0) {
     return yearCompare;

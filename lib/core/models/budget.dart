@@ -6,6 +6,7 @@ class Budget {
     required this.month,
     required this.year,
     required this.amount,
+    this.displayOrder = 0,
     this.createdBy,
     this.createdAt,
     this.updatedAt,
@@ -17,6 +18,7 @@ class Budget {
   final int month;
   final int year;
   final double amount;
+  final int displayOrder;
   final String? createdBy;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -29,6 +31,7 @@ class Budget {
       month: _readRequiredInt(json['month'], 'month'),
       year: _readRequiredInt(json['year'], 'year'),
       amount: _readRequiredDouble(json['amount'], 'amount'),
+      displayOrder: _readOptionalInt(json['display_order']) ?? 0,
       createdBy: _readString(json, 'created_by'),
       createdAt: _readDateTime(json['created_at']),
       updatedAt: _readDateTime(json['updated_at']),
@@ -45,6 +48,7 @@ class Budget {
       'month': month,
       'year': year,
       'amount': amount,
+      'display_order': displayOrder,
       if (createdBy != null) 'created_by': createdBy,
       if (createdAt != null) 'created_at': createdAt.toIso8601String(),
       if (updatedAt != null) 'updated_at': updatedAt.toIso8601String(),
@@ -58,6 +62,7 @@ class Budget {
     int? month,
     int? year,
     double? amount,
+    int? displayOrder,
     String? createdBy,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -69,6 +74,7 @@ class Budget {
       month: month ?? this.month,
       year: year ?? this.year,
       amount: amount ?? this.amount,
+      displayOrder: displayOrder ?? this.displayOrder,
       createdBy: createdBy ?? this.createdBy,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -125,4 +131,14 @@ DateTime? _readDateTime(Object? value) {
     return null;
   }
   return DateTime.tryParse(value.toString());
+}
+
+int? _readOptionalInt(Object? value) {
+  if (value == null || value.toString().trim().isEmpty) {
+    return null;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  return int.tryParse(value.toString());
 }

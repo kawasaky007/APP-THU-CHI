@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/models.dart';
 import '../../../../core/providers/supabase_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../data/budget_clone_service.dart';
 import '../../data/budget_repository.dart';
 
 class BudgetMonthParams {
@@ -33,6 +34,39 @@ class BudgetMonthParams {
 final budgetRepositoryProvider = Provider<BudgetRepository>((ref) {
   return BudgetRepository(ref.watch(supabaseServiceProvider));
 });
+
+final budgetCloneServiceProvider = Provider<BudgetCloneService>((ref) {
+  return BudgetCloneService(ref.watch(budgetRepositoryProvider));
+});
+
+/// Triggers budget cloning when a month has no budgets.
+/// Returns true if cloning was performed, false if skipped.
+final budgetCloneProvider = FutureProvider.autoDispose
+    .family<bool, BudgetMonthParams>((ref, params) async {
+      final authState = ref.read(authControllerProvider);
+      final userId = authState.user?.id ?? authState.profile?.id;
+
+      debugPrint(
+        '[BudgetClone] Provider triggered: month=${params.month} year=${params.year}',
+      );
+
+      try {
+        final result = await ref
+            .read(budgetCloneServiceProvider)
+            .cloneBudgetIfNeeded(
+              householdId: params.householdId,
+              month: params.month,
+              year: params.year,
+              createdBy: userId,
+            );
+        debugPrint('[BudgetClone] Provider result: $result');
+        return result;
+      } catch (e, st) {
+        debugPrint('[BudgetClone] Provider error: $e');
+        debugPrint('[BudgetClone] Stack: $st');
+        rethrow;
+      }
+    });
 
 final budgetsByMonthProvider = StreamProvider.autoDispose
     .family<List<Budget>, BudgetMonthParams>((ref, params) {
@@ -114,6 +148,20 @@ class BudgetActionController extends StateNotifier<BudgetActionState> {
         month: budget.month,
         year: budget.year,
       );
+    });
+  }
+
+  Future<bool> reorderBudgets(List<Budget> reorderedBudgets) {
+    return _runAction(() async {
+      await _repository.updateDisplayOrders(reorderedBudgets);
+      if (reorderedBudgets.isNotEmpty) {
+        final first = reorderedBudgets.first;
+        _invalidateBudgetMonth(
+          householdId: first.householdId,
+          month: first.month,
+          year: first.year,
+        );
+      }
     });
   }
 

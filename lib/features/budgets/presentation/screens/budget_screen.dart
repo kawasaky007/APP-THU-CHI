@@ -64,6 +64,29 @@ class _BudgetScreenState extends ConsumerState<BudgetScreen> {
     final transactions = transactionsAsync.valueOrNull;
     final budgets = budgetsAsync.valueOrNull;
 
+    // Trigger automatic budget cloning when month has no budgets.
+    if (budgets != null && budgets.isEmpty) {
+      final cloneAsync = ref.watch(budgetCloneProvider(budgetParams));
+      if (cloneAsync.isLoading) {
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      }
+      // If cloning threw an error, log it and show empty state.
+      if (cloneAsync.hasError) {
+        debugPrint(
+          '[BudgetClone] Error: ${cloneAsync.error}',
+        );
+      }
+      // If cloning was performed, invalidate stream to force reload.
+      if (cloneAsync.valueOrNull == true) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ref.invalidate(budgetsByMonthProvider(budgetParams));
+          ref.invalidate(budgetCloneProvider(budgetParams));
+        });
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      }
+    }
+
     if (categoriesAsync.hasError && categories == null ||
         transactionsAsync.hasError && transactions == null ||
         budgetsAsync.hasError && budgets == null) {
@@ -97,43 +120,72 @@ class _BudgetScreenState extends ConsumerState<BudgetScreen> {
           householdId: householdId,
           budgetParams: budgetParams,
         ),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
-            AppSpacing.sm,
-            AppSpacing.md,
-            96,
-          ),
-          children: [
-            _MonthSelector(
-              label: _monthFormat.format(_selectedMonth),
-              onPickMonth: _pickMonth,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _BudgetSummaryPanel(summary: summary),
-            const SizedBox(height: AppSpacing.md),
-            if (actionState.errorMessage case final errorMessage?) ...[
-              _BudgetErrorBanner(message: errorMessage),
-              const SizedBox(height: AppSpacing.md),
-            ],
-            if (summary.categoryStatuses.isEmpty)
-              const _EmptyBudgetCategories()
-            else
-              for (final status in summary.categoryStatuses) ...[
-                _BudgetStatusTile(
-                  key: ValueKey(
-                    'budget-${status.category.id}-${status.budget?.id ?? 'none'}',
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.sm,
+                AppSpacing.md,
+                0,
+              ),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  _MonthSelector(
+                    label: _monthFormat.format(_selectedMonth),
+                    onPickMonth: _pickMonth,
                   ),
-                  status: status,
-                  enabled: !actionState.isLoading,
-                  onEdit: () =>
-                      _editBudget(householdId: householdId, status: status),
-                  onDelete: status.budget == null
-                      ? null
-                      : () => _deleteStatusBudget(status),
+                  const SizedBox(height: AppSpacing.md),
+                  _BudgetSummaryPanel(summary: summary),
+                  const SizedBox(height: AppSpacing.md),
+                  if (actionState.errorMessage case final errorMessage?) ...[
+                    _BudgetErrorBanner(message: errorMessage),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
+                  if (summary.categoryStatuses.isEmpty)
+                    const _EmptyBudgetCategories(),
+                ]),
+              ),
+            ),
+            if (summary.categoryStatuses.isNotEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  0,
+                  AppSpacing.md,
+                  96,
                 ),
-                const SizedBox(height: AppSpacing.sm),
-              ],
+                sliver: SliverReorderableList(
+                  itemCount: summary.categoryStatuses.length,
+                  onReorder: (oldIndex, newIndex) => _onReorderBudgets(
+                    oldIndex: oldIndex,
+                    newIndex: newIndex,
+                    statuses: summary.categoryStatuses,
+                    householdId: householdId,
+                  ),
+                  itemBuilder: (context, index) {
+                    final status = summary.categoryStatuses[index];
+                    return Padding(
+                      key: ValueKey(
+                        'budget-${status.category.id}-${status.budget?.id ?? 'none'}',
+                      ),
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: _BudgetStatusTile(
+                        index: index,
+                        status: status,
+                        enabled: !actionState.isLoading,
+                        onEdit: () => _editBudget(
+                          householdId: householdId,
+                          status: status,
+                        ),
+                        onDelete: status.budget == null
+                            ? null
+                            : () => _deleteStatusBudget(status),
+                      ),
+                    );
+                  },
+                ),
+              ),
           ],
         ),
       ),
@@ -148,6 +200,35 @@ class _BudgetScreenState extends ConsumerState<BudgetScreen> {
       return date.year == _selectedMonth.year &&
           date.month == _selectedMonth.month;
     }).toList();
+  }
+
+  void _onReorderBudgets({
+    required int oldIndex,
+    required int newIndex,
+    required List<CategoryBudgetStatus> statuses,
+    required String householdId,
+  }) {
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    if (oldIndex == newIndex) return;
+
+    final reordered = List<CategoryBudgetStatus>.from(statuses);
+    final item = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, item);
+
+    // Build the list of budgets with updated display_order
+    final updatedBudgets = <Budget>[];
+    for (var i = 0; i < reordered.length; i++) {
+      final budget = reordered[i].budget;
+      if (budget != null) {
+        updatedBudgets.add(budget.copyWith(displayOrder: i));
+      }
+    }
+
+    if (updatedBudgets.isEmpty) return;
+
+    ref.read(budgetActionProvider.notifier).reorderBudgets(updatedBudgets);
   }
 
   Future<void> _pickMonth() async {
@@ -391,13 +472,14 @@ class _BudgetSummaryPanel extends StatelessWidget {
 
 class _BudgetStatusTile extends StatelessWidget {
   _BudgetStatusTile({
-    super.key,
+    required this.index,
     required this.status,
     required this.enabled,
     required this.onEdit,
     required this.onDelete,
   });
 
+  final int index;
   final CategoryBudgetStatus status;
   final bool enabled;
   final VoidCallback onEdit;
@@ -426,6 +508,14 @@ class _BudgetStatusTile extends StatelessWidget {
           children: [
             Row(
               children: [
+                ReorderableDragStartListener(
+                  index: index,
+                  child: const Icon(
+                    Icons.drag_handle,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
                 CircleAvatar(
                   backgroundColor: color.withValues(alpha: 0.14),
                   child: Icon(
