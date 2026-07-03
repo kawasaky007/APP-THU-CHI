@@ -515,6 +515,7 @@ class SupabaseTables {
   SupabaseTables._();
 
   static const userProfiles = 'profiles';
+  static const users = userProfiles;
   static const households = 'households';
   static const categories = 'categories';
   static const transactions = 'transactions';

@@ -122,19 +122,13 @@ class _TransactionHistoryScreenState
 
   void _goToPreviousMonth() {
     setState(() {
-      _selectedMonth = DateTime(
-        _selectedMonth.year,
-        _selectedMonth.month - 1,
-      );
+      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
     });
   }
 
   void _goToNextMonth() {
     setState(() {
-      _selectedMonth = DateTime(
-        _selectedMonth.year,
-        _selectedMonth.month + 1,
-      );
+      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1);
     });
   }
 
@@ -217,10 +211,7 @@ class _TransactionHistoryScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoadingMore = false);
-      AppFeedback.showSnackBar(
-        'Không thể tải thêm giao dịch.',
-        isError: true,
-      );
+      AppFeedback.showSnackBar('Không thể tải thêm giao dịch.', isError: true);
     }
   }
 
@@ -272,7 +263,6 @@ class _MonthlyTab extends ConsumerWidget {
     final categoriesAsync = ref.watch(categoriesStreamProvider(householdId));
     final categories = categoriesAsync.valueOrNull ?? const <Category>[];
     final profilesById = ref.watch(profilesByIdProvider(householdId));
-    final currentUserId = ref.watch(currentUserIdProvider) ?? '';
 
     return Column(
       children: [
@@ -289,9 +279,8 @@ class _MonthlyTab extends ConsumerWidget {
             skipLoadingOnReload: true,
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (error, stackTrace) => _HistoryErrorView(
-              onRetry: () => ref.invalidate(
-                transactionsByMonthStreamProvider(params),
-              ),
+              onRetry: () =>
+                  ref.invalidate(transactionsByMonthStreamProvider(params)),
             ),
             data: (transactions) {
               final visibleTransactions = transactions
@@ -302,9 +291,7 @@ class _MonthlyTab extends ConsumerWidget {
               return RefreshIndicator(
                 onRefresh: () async {
                   ref.invalidate(transactionsByMonthStreamProvider(params));
-                  await Future<void>.delayed(
-                    const Duration(milliseconds: 250),
-                  );
+                  await Future<void>.delayed(const Duration(milliseconds: 250));
                 },
                 child: CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
@@ -348,18 +335,20 @@ class _MonthlyTab extends ConsumerWidget {
                               categories,
                               transaction.categoryId,
                             );
-                            final creatorName =
-                                TransactionViewData.resolveCreatorName(
-                              creatorUserId: transaction.userId,
-                              currentUserId: currentUserId,
-                              profilesById: profilesById,
-                            );
+                            final memberProfile =
+                                profilesById[transaction.userId];
+                            final memberName =
+                                TransactionViewData.resolveMemberName(
+                                  memberUserId: transaction.userId,
+                                  profilesById: profilesById,
+                                );
                             return _TransactionHistoryTile(
                               key: ValueKey(transaction.id.trim()),
                               transaction: transaction,
                               category: category,
                               householdId: householdId,
-                              creatorName: creatorName,
+                              memberName: memberName,
+                              memberProfile: memberProfile,
                             );
                           },
                         ),
@@ -403,7 +392,6 @@ class _AllTransactionsTab extends ConsumerWidget {
     final categoriesAsync = ref.watch(categoriesStreamProvider(householdId));
     final categories = categoriesAsync.valueOrNull ?? const <Category>[];
     final profilesById = ref.watch(profilesByIdProvider(householdId));
-    final currentUserId = ref.watch(currentUserIdProvider) ?? '';
 
     if (transactions.isEmpty && isLoadingMore) {
       return const Center(child: CircularProgressIndicator());
@@ -464,10 +452,9 @@ class _AllTransactionsTab extends ConsumerWidget {
                     categories,
                     transaction.categoryId,
                   );
-                  final creatorName =
-                      TransactionViewData.resolveCreatorName(
-                    creatorUserId: transaction.userId,
-                    currentUserId: currentUserId,
+                  final memberProfile = profilesById[transaction.userId];
+                  final memberName = TransactionViewData.resolveMemberName(
+                    memberUserId: transaction.userId,
                     profilesById: profilesById,
                   );
                   return _TransactionHistoryTile(
@@ -475,7 +462,8 @@ class _AllTransactionsTab extends ConsumerWidget {
                     transaction: transaction,
                     category: category,
                     householdId: householdId,
-                    creatorName: creatorName,
+                    memberName: memberName,
+                    memberProfile: memberProfile,
                   );
                 },
               ),
@@ -486,18 +474,18 @@ class _AllTransactionsTab extends ConsumerWidget {
                 child: isLoadingMore
                     ? const Center(child: CircularProgressIndicator())
                     : hasMore
-                        ? Center(
-                            child: OutlinedButton(
-                              onPressed: onLoadMore,
-                              child: const Text('Tải thêm'),
-                            ),
-                          )
-                        : Center(
-                            child: Text(
-                              'Đã hiển thị tất cả ${transactions.length} giao dịch',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ),
+                    ? Center(
+                        child: OutlinedButton(
+                          onPressed: onLoadMore,
+                          child: const Text('Tải thêm'),
+                        ),
+                      )
+                    : Center(
+                        child: Text(
+                          'Đã hiển thị tất cả ${transactions.length} giao dịch',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
               ),
             ),
           ],
@@ -549,9 +537,9 @@ class _MonthNavigationBar extends StatelessWidget {
               child: Text(
                 'Tháng ${monthFormat.format(selectedMonth)}',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
           ),
@@ -615,8 +603,11 @@ class _MonthlySummaryCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.account_balance_wallet_outlined,
-                    color: balanceColor, size: 20),
+                Icon(
+                  Icons.account_balance_wallet_outlined,
+                  color: balanceColor,
+                  size: 20,
+                ),
                 const SizedBox(width: AppSpacing.sm),
                 Text(
                   'Số dư: ${currencyFormat.format(balance)}',
@@ -683,13 +674,15 @@ class _TransactionHistoryTile extends ConsumerWidget {
     required this.transaction,
     required this.category,
     required this.householdId,
-    required this.creatorName,
+    required this.memberName,
+    required this.memberProfile,
   });
 
   final Transaction transaction;
   final Category? category;
   final String householdId;
-  final String creatorName;
+  final String memberName;
+  final UserProfile? memberProfile;
 
   final _currencyFormat = NumberFormat.currency(
     locale: 'vi_VN',
@@ -707,6 +700,7 @@ class _TransactionHistoryTile extends ConsumerWidget {
     final icon = category == null
         ? Icons.category_outlined
         : CategoryVisuals.iconFromName(category.icon);
+    final categoryName = category?.name ?? transaction.title;
     final prefix = transaction.type == TransactionType.income ? '+' : '-';
     final amountColor = transaction.type == TransactionType.income
         ? const Color(0xFF0F8B6F)
@@ -721,9 +715,9 @@ class _TransactionHistoryTile extends ConsumerWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: Theme.of(context).colorScheme.outlineVariant.withValues(
-            alpha: 0.5,
-          ),
+          color: Theme.of(
+            context,
+          ).colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),
       ),
       child: Padding(
@@ -731,27 +725,40 @@ class _TransactionHistoryTile extends ConsumerWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: color.withValues(alpha: 0.12),
-              child: Icon(icon, color: color, size: 20),
-            ),
+            _HistoryMemberAvatar(profile: memberProfile, name: memberName),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    category?.name ?? transaction.title,
+                    memberName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(icon, color: color, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          categoryName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
                   Text(
-                    '${_dateFormat.format(transaction.transactionDate)} · $creatorName',
+                    _dateFormat.format(transaction.transactionDate),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: textTheme.bodySmall?.copyWith(
@@ -903,6 +910,41 @@ class _TransactionHistoryTile extends ConsumerWidget {
   }
 }
 
+class _HistoryMemberAvatar extends StatelessWidget {
+  const _HistoryMemberAvatar({required this.profile, required this.name});
+
+  final UserProfile? profile;
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final avatarUrl = profile?.avatarUrl?.trim();
+    final colors = _memberAvatarColors(profile: profile, name: name);
+
+    return CircleAvatar(
+      radius: 20,
+      foregroundImage: avatarUrl == null || avatarUrl.isEmpty
+          ? null
+          : NetworkImage(avatarUrl),
+      backgroundColor: colors.background,
+      child: Text(
+        _initialsForName(name),
+        style: TextStyle(color: colors.foreground, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+}
+
+class _MemberAvatarColors {
+  const _MemberAvatarColors({
+    required this.background,
+    required this.foreground,
+  });
+
+  final Color background;
+  final Color foreground;
+}
+
 class _EmptyMonthView extends StatelessWidget {
   const _EmptyMonthView({required this.onPickMonth});
 
@@ -924,9 +966,9 @@ class _EmptyMonthView extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
             Text(
               'Chưa có giao dịch trong tháng này',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: AppSpacing.sm),
             OutlinedButton.icon(
@@ -1007,4 +1049,88 @@ Category? _findCategory(List<Category> categories, String categoryId) {
     }
   }
   return null;
+}
+
+String _initialsForName(String name) {
+  final words = name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((word) => word.isNotEmpty)
+      .toList();
+  if (words.isEmpty) {
+    return '?';
+  }
+  if (words.length == 1) {
+    return words.first.characters.first.toUpperCase();
+  }
+
+  return '${words.first.characters.first}${words.last.characters.first}'
+      .toUpperCase();
+}
+
+_MemberAvatarColors _memberAvatarColors({
+  required UserProfile? profile,
+  required String name,
+}) {
+  const palette = [
+    _MemberAvatarColors(
+      background: Color(0xFFE11D48),
+      foreground: Colors.white,
+    ),
+    _MemberAvatarColors(
+      background: Color(0xFFEA580C),
+      foreground: Colors.white,
+    ),
+    _MemberAvatarColors(
+      background: Color(0xFFD97706),
+      foreground: Colors.white,
+    ),
+    _MemberAvatarColors(
+      background: Color(0xFF16A34A),
+      foreground: Colors.white,
+    ),
+    _MemberAvatarColors(
+      background: Color(0xFF059669),
+      foreground: Colors.white,
+    ),
+    _MemberAvatarColors(
+      background: Color(0xFF0891B2),
+      foreground: Colors.white,
+    ),
+    _MemberAvatarColors(
+      background: Color(0xFF2563EB),
+      foreground: Colors.white,
+    ),
+    _MemberAvatarColors(
+      background: Color(0xFF4F46E5),
+      foreground: Colors.white,
+    ),
+    _MemberAvatarColors(
+      background: Color(0xFF7C3AED),
+      foreground: Colors.white,
+    ),
+    _MemberAvatarColors(
+      background: Color(0xFFC026D3),
+      foreground: Colors.white,
+    ),
+    _MemberAvatarColors(
+      background: Color(0xFFDB2777),
+      foreground: Colors.white,
+    ),
+    _MemberAvatarColors(
+      background: Color(0xFF475569),
+      foreground: Colors.white,
+    ),
+  ];
+
+  final seed = [profile?.id, profile?.email, name]
+      .whereType<String>()
+      .firstWhere((value) => value.trim().isNotEmpty, orElse: () => 'unknown');
+
+  var hash = 0;
+  for (final codeUnit in seed.codeUnits) {
+    hash = (hash * 31 + codeUnit) & 0x7fffffff;
+  }
+
+  return palette[hash % palette.length];
 }

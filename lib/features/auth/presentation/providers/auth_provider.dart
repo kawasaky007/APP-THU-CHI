@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
+import '../../../../core/models/models.dart';
 import '../../../../core/providers/supabase_provider.dart';
 import '../../../household/presentation/providers/household_provider.dart';
 import '../../data/auth_repository.dart';
@@ -140,6 +141,25 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
+  Future<bool> transferHouseholdOwnership(String newOwnerId) async {
+    final previousState = state;
+    _setState(state.asLoading());
+
+    try {
+      final session = await _repo.transferCurrentHouseholdOwnership(
+        newOwnerId: newOwnerId,
+      );
+      if (!mounted) {
+        return false;
+      }
+      _setState(AuthState.fromSession(session));
+      return true;
+    } catch (error) {
+      _setState(previousState.withError(_errorMessage(error)));
+      return false;
+    }
+  }
+
   Future<bool> leaveHousehold() async {
     final previousState = state;
     _setState(state.asLoading());
@@ -190,6 +210,19 @@ class AuthController extends StateNotifier<AuthState> {
     if (state.errorMessage != null) {
       _setState(state.clearError());
     }
+  }
+
+  void replaceProfile(UserProfile profile) {
+    _setState(
+      AuthState(
+        status: state.status,
+        isLoading: state.isLoading,
+        user: state.user,
+        profile: profile,
+        household: state.household,
+        errorMessage: state.errorMessage,
+      ),
+    );
   }
 
   Future<void> _runSessionAction(

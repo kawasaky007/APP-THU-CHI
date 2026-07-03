@@ -4,7 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/models.dart';
 import '../../../../core/providers/supabase_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../data/amount_calculator_service.dart';
 import '../../data/transaction_repository.dart';
+
+final amountCalculatorServiceProvider = Provider<AmountCalculatorService>((
+  ref,
+) {
+  return const AmountCalculatorService();
+});
 
 final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
   return TransactionRepository(ref.watch(supabaseServiceProvider));
@@ -117,6 +124,7 @@ class TransactionActionController
 
   Future<bool> updateTransaction({
     required Transaction transaction,
+    required String userId,
     required Category category,
     required double amount,
     required DateTime transactionDate,
@@ -125,6 +133,7 @@ class TransactionActionController
     return _runAction(() async {
       await _repository.updateTransaction(
         transaction: transaction,
+        userId: userId,
         category: category,
         amount: amount,
         transactionDate: transactionDate,

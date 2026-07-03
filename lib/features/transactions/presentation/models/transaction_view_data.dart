@@ -33,6 +33,28 @@ class TransactionViewData {
     return fullName;
   }
 
+  static String resolveMemberName({
+    required String memberUserId,
+    required Map<String, UserProfile> profilesById,
+  }) {
+    final profile = profilesById[memberUserId];
+    if (profile == null) {
+      return 'Không rõ';
+    }
+
+    final fullName = profile.fullName.trim();
+    if (fullName.isNotEmpty) {
+      return fullName;
+    }
+
+    final email = profile.email.trim();
+    if (email.isNotEmpty) {
+      return email;
+    }
+
+    return 'Thành viên';
+  }
+
   static List<TransactionViewData> fromTransactions({
     required List<Transaction> transactions,
     required Map<String, UserProfile> profilesById,

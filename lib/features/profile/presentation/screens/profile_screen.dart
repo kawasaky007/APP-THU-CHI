@@ -6,16 +6,44 @@ import '../../../../core/config/app_constants.dart';
 import '../../../../core/models/models.dart';
 import '../../../../shared/widgets/app_feedback.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../categories/presentation/providers/category_provider.dart';
+import '../../../transactions/presentation/providers/transaction_provider.dart';
+import '../providers/profile_provider.dart';
 
-class ProfileScreen extends ConsumerWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  late final TextEditingController _nameController;
+  bool _isEditingName = false;
+  String? _nameErrorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
+    final profileActionState = ref.watch(profileActionProvider);
     final profile = authState.profile;
     final household = authState.household;
     final inviteCode = household?.inviteCode;
+    final householdMembersAsync = household == null
+        ? const AsyncValue<List<UserProfile>>.data([])
+        : ref.watch(householdProfilesStreamProvider(household.id));
 
     return Scaffold(
       appBar: AppBar(
@@ -39,9 +67,34 @@ class ProfileScreen extends ConsumerWidget {
             AppSpacing.xl,
           ),
           children: [
-            _ProfileHeader(profile: profile),
+            _ProfileHeader(
+              profile: profile,
+              onEditName: profile == null || profileActionState.isLoading
+                  ? null
+                  : () => _startEditName(profile),
+            ),
             const SizedBox(height: AppSpacing.md),
-            _PersonalInfoCard(profile: profile),
+            _PersonalInfoCard(
+              profile: profile,
+              isEditingName: _isEditingName,
+              isSavingName: profileActionState.isLoading,
+              nameController: _nameController,
+              nameErrorText: _nameErrorText ?? profileActionState.errorMessage,
+              onEditName: profile == null || profileActionState.isLoading
+                  ? null
+                  : () => _startEditName(profile),
+              onCancelEditName: profileActionState.isLoading
+                  ? null
+                  : _cancelEditName,
+              onSaveName: profileActionState.isLoading ? null : _saveName,
+              onNameChanged: (_) {
+                if (_nameErrorText != null ||
+                    profileActionState.errorMessage != null) {
+                  _setLocalState(() => _nameErrorText = null);
+                  ref.read(profileActionProvider.notifier).clearError();
+                }
+              },
+            ),
             const SizedBox(height: AppSpacing.md),
             _HouseholdCard(
               household: household,
@@ -52,6 +105,20 @@ class ProfileScreen extends ConsumerWidget {
               onRenameHousehold: household == null
                   ? null
                   : () => _renameHousehold(context, ref, household),
+              transferCandidates: _transferCandidates(
+                householdMembersAsync.valueOrNull ?? const <UserProfile>[],
+                household: household,
+              ),
+              isLoadingMembers:
+                  householdMembersAsync.valueOrNull == null &&
+                  householdMembersAsync.isLoading,
+              onTransferOwnership:
+                  household == null ||
+                      profile?.role != UserProfileRole.owner ||
+                      authState.isLoading
+                  ? null
+                  : (members) =>
+                        _transferOwnership(context, ref, household, members),
               onLeaveHousehold:
                   household == null || profile?.role == UserProfileRole.owner
                   ? null
@@ -79,6 +146,59 @@ class ProfileScreen extends ConsumerWidget {
 
   Future<void> _refresh(WidgetRef ref) {
     return ref.read(authControllerProvider.notifier).refreshSession();
+  }
+
+  void _startEditName(UserProfile profile) {
+    _setLocalState(() {
+      _isEditingName = true;
+      _nameErrorText = null;
+      _nameController.text = profile.fullName;
+      _nameController.selection = TextSelection.collapsed(
+        offset: _nameController.text.length,
+      );
+    });
+    ref.read(profileActionProvider.notifier).clearError();
+  }
+
+  void _cancelEditName() {
+    _setLocalState(() {
+      _isEditingName = false;
+      _nameErrorText = null;
+      _nameController.clear();
+    });
+    ref.read(profileActionProvider.notifier).clearError();
+  }
+
+  Future<void> _saveName() async {
+    final validationError = _validateProfileName(_nameController.text);
+    if (validationError != null) {
+      _setLocalState(() => _nameErrorText = validationError);
+      return;
+    }
+
+    final cleanName = _normalizeProfileName(_nameController.text);
+    final success = await ref
+        .read(profileActionProvider.notifier)
+        .updateUserProfileName(cleanName);
+    if (!mounted) {
+      return;
+    }
+
+    if (success) {
+      _setLocalState(() {
+        _isEditingName = false;
+        _nameErrorText = null;
+        _nameController.text = cleanName;
+      });
+      AppFeedback.showSnackBar('Đã cập nhật tên hiển thị.');
+      return;
+    }
+
+    final message =
+        ref.read(profileActionProvider).errorMessage ??
+        'Không thể cập nhật tên hiển thị. Vui lòng thử lại.';
+    _setLocalState(() => _nameErrorText = message);
+    AppFeedback.showSnackBar(message, isError: true);
   }
 
   Future<void> _copyInviteCode(String inviteCode) async {
@@ -113,6 +233,80 @@ class ProfileScreen extends ConsumerWidget {
         'Không thể đổi tên household. Vui lòng thử lại.';
     await AppFeedback.showErrorDialog(
       title: 'Không thể đổi tên',
+      message: message,
+    );
+    if (context.mounted) {
+      ref.read(authControllerProvider.notifier).clearError();
+    }
+  }
+
+  Future<void> _transferOwnership(
+    BuildContext context,
+    WidgetRef ref,
+    Household household,
+    List<UserProfile> candidates,
+  ) async {
+    if (candidates.isEmpty) {
+      AppFeedback.showSnackBar(
+        'Không có thành viên khác để chuyển quyền.',
+        isError: true,
+      );
+      return;
+    }
+
+    final selectedMember = await showDialog<UserProfile>(
+      context: context,
+      builder: (_) => _TransferOwnershipDialog(members: candidates),
+    );
+    if (!context.mounted || selectedMember == null) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final memberName = _memberDisplayName(selectedMember);
+        return AlertDialog(
+          title: Text('Transfer ownership to "$memberName"?'),
+          content: Text(
+            'This action will make $memberName the new Household Owner.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).pop(true),
+              icon: const Icon(Icons.admin_panel_settings_outlined),
+              label: const Text('Chuyển quyền'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!context.mounted || confirmed != true) {
+      return;
+    }
+
+    final success = await ref
+        .read(authControllerProvider.notifier)
+        .transferHouseholdOwnership(selectedMember.id);
+    if (!context.mounted) {
+      return;
+    }
+
+    if (success) {
+      _refreshHouseholdProviders(ref, household.id);
+      AppFeedback.showSnackBar('Đã chuyển quyền chủ household.');
+      return;
+    }
+
+    final message =
+        ref.read(authControllerProvider).errorMessage ??
+        'Không thể chuyển quyền chủ household. Vui lòng thử lại.';
+    await AppFeedback.showErrorDialog(
+      title: 'Không thể chuyển quyền',
       message: message,
     );
     if (context.mounted) {
@@ -277,6 +471,13 @@ class ProfileScreen extends ConsumerWidget {
       await ref.read(authControllerProvider.notifier).logout();
     }
   }
+
+  void _setLocalState(VoidCallback update) {
+    if (!mounted) {
+      return;
+    }
+    setState(update);
+  }
 }
 
 class _RenameHouseholdDialog extends StatefulWidget {
@@ -366,10 +567,80 @@ class _RenameHouseholdDialogState extends State<_RenameHouseholdDialog> {
   }
 }
 
+class _TransferOwnershipDialog extends StatefulWidget {
+  const _TransferOwnershipDialog({required this.members});
+
+  final List<UserProfile> members;
+
+  @override
+  State<_TransferOwnershipDialog> createState() =>
+      _TransferOwnershipDialogState();
+}
+
+class _TransferOwnershipDialogState extends State<_TransferOwnershipDialog> {
+  String? _selectedMemberId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedMemberId = widget.members.isEmpty ? null : widget.members.first.id;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedMember = _selectedMember(widget.members, _selectedMemberId);
+
+    return AlertDialog(
+      title: const Text('Transfer Household Ownership'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final member in widget.members)
+              ListTile(
+                onTap: () => setState(() => _selectedMemberId = member.id),
+                leading: Icon(
+                  member.id == _selectedMemberId
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                ),
+                title: Text(
+                  _memberDisplayName(member),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  member.email,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Hủy'),
+        ),
+        FilledButton.icon(
+          onPressed: selectedMember == null
+              ? null
+              : () => Navigator.of(context).pop(selectedMember),
+          icon: const Icon(Icons.arrow_forward),
+          label: const Text('Tiếp tục'),
+        ),
+      ],
+    );
+  }
+}
+
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.profile});
+  const _ProfileHeader({required this.profile, required this.onEditName});
 
   final UserProfile? profile;
+  final VoidCallback? onEditName;
 
   @override
   Widget build(BuildContext context) {
@@ -378,6 +649,7 @@ class _ProfileHeader extends StatelessWidget {
     final fullName = profile == null || profile.fullName.trim().isEmpty
         ? 'Người dùng'
         : profile.fullName;
+    final avatarUrl = profile?.avatarUrl?.trim();
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -389,6 +661,9 @@ class _ProfileHeader extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 34,
+            foregroundImage: avatarUrl == null || avatarUrl.isEmpty
+                ? null
+                : NetworkImage(avatarUrl),
             backgroundColor: colorScheme.primary,
             child: Text(
               _initials(fullName),
@@ -426,6 +701,12 @@ class _ProfileHeader extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(width: AppSpacing.sm),
+          OutlinedButton.icon(
+            onPressed: onEditName,
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            label: const Text('Sửa'),
+          ),
         ],
       ),
     );
@@ -433,9 +714,27 @@ class _ProfileHeader extends StatelessWidget {
 }
 
 class _PersonalInfoCard extends StatelessWidget {
-  const _PersonalInfoCard({required this.profile});
+  const _PersonalInfoCard({
+    required this.profile,
+    required this.isEditingName,
+    required this.isSavingName,
+    required this.nameController,
+    required this.nameErrorText,
+    required this.onEditName,
+    required this.onCancelEditName,
+    required this.onSaveName,
+    required this.onNameChanged,
+  });
 
   final UserProfile? profile;
+  final bool isEditingName;
+  final bool isSavingName;
+  final TextEditingController nameController;
+  final String? nameErrorText;
+  final VoidCallback? onEditName;
+  final VoidCallback? onCancelEditName;
+  final VoidCallback? onSaveName;
+  final ValueChanged<String> onNameChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -450,11 +749,26 @@ class _PersonalInfoCard extends StatelessWidget {
               title: 'Thông tin cá nhân',
             ),
             const SizedBox(height: AppSpacing.sm),
-            _InfoRow(
-              icon: Icons.badge_outlined,
-              label: 'Họ tên',
-              value: profile?.fullName ?? 'Chưa cập nhật',
-            ),
+            if (isEditingName)
+              _EditProfileNameForm(
+                controller: nameController,
+                errorText: nameErrorText,
+                isSaving: isSavingName,
+                onCancel: onCancelEditName,
+                onSave: onSaveName,
+                onChanged: onNameChanged,
+              )
+            else
+              _InfoRow(
+                icon: Icons.badge_outlined,
+                label: 'Họ tên',
+                value: profile?.fullName ?? 'Chưa cập nhật',
+                trailing: IconButton.outlined(
+                  tooltip: 'Sửa tên hiển thị',
+                  onPressed: onEditName,
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+              ),
             _InfoRow(
               icon: Icons.email_outlined,
               label: 'Email',
@@ -478,6 +792,9 @@ class _HouseholdCard extends StatelessWidget {
     required this.role,
     required this.onCopyInviteCode,
     required this.onRenameHousehold,
+    required this.transferCandidates,
+    required this.isLoadingMembers,
+    required this.onTransferOwnership,
     required this.onLeaveHousehold,
     required this.onDeleteHousehold,
   });
@@ -486,6 +803,9 @@ class _HouseholdCard extends StatelessWidget {
   final UserProfileRole? role;
   final VoidCallback? onCopyInviteCode;
   final VoidCallback? onRenameHousehold;
+  final List<UserProfile> transferCandidates;
+  final bool isLoadingMembers;
+  final ValueChanged<List<UserProfile>>? onTransferOwnership;
   final VoidCallback? onLeaveHousehold;
   final VoidCallback? onDeleteHousehold;
 
@@ -571,17 +891,40 @@ class _HouseholdCard extends StatelessWidget {
               const Divider(height: 1),
               const SizedBox(height: AppSpacing.sm),
               if (isOwner)
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: colorScheme.errorContainer,
-                      foregroundColor: colorScheme.onErrorContainer,
+                Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed:
+                            onTransferOwnership == null || isLoadingMembers
+                            ? null
+                            : () => onTransferOwnership!(transferCandidates),
+                        icon: isLoadingMembers
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.admin_panel_settings_outlined),
+                        label: const Text('Transfer Household Ownership'),
+                      ),
                     ),
-                    onPressed: onDeleteHousehold,
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Xóa household'),
-                  ),
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: colorScheme.errorContainer,
+                          foregroundColor: colorScheme.onErrorContainer,
+                        ),
+                        onPressed: onDeleteHousehold,
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('Xóa household'),
+                      ),
+                    ),
+                  ],
                 )
               else
                 SizedBox(
@@ -625,6 +968,82 @@ class _AppModeCard extends StatelessWidget {
   }
 }
 
+class _EditProfileNameForm extends StatelessWidget {
+  const _EditProfileNameForm({
+    required this.controller,
+    required this.errorText,
+    required this.isSaving,
+    required this.onCancel,
+    required this.onSave,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String? errorText;
+  final bool isSaving;
+  final VoidCallback? onCancel;
+  final VoidCallback? onSave;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            enabled: !isSaving,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.done,
+            maxLength: 50,
+            inputFormatters: [LengthLimitingTextInputFormatter(50)],
+            decoration: InputDecoration(
+              labelText: 'Họ tên',
+              prefixIcon: const Icon(Icons.badge_outlined),
+              errorText: errorText,
+              counterText: '',
+            ),
+            onChanged: onChanged,
+            onSubmitted: (_) {
+              if (onSave != null) {
+                onSave!();
+              }
+            },
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onCancel,
+                  icon: const Icon(Icons.close),
+                  label: const Text('Hủy'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: onSave,
+                  icon: isSaving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: Text(isSaving ? 'Đang lưu' : 'Lưu'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle({required this.icon, required this.title});
 
@@ -655,11 +1074,13 @@ class _InfoRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.trailing,
   });
 
   final IconData icon;
   final String label;
   final String value;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -689,6 +1110,10 @@ class _InfoRow extends StatelessWidget {
               ],
             ),
           ),
+          if (trailing != null) ...[
+            const SizedBox(width: AppSpacing.sm),
+            trailing!,
+          ],
         ],
       ),
     );
@@ -703,8 +1128,79 @@ String? _validateHouseholdName(String? value) {
   return null;
 }
 
+String? _validateProfileName(String? value) {
+  final cleanName = _normalizeProfileName(value ?? '');
+  if (cleanName.isEmpty) {
+    return 'Tên hiển thị không được để trống.';
+  }
+  if (cleanName.length > 50) {
+    return 'Tên hiển thị tối đa 50 ký tự.';
+  }
+  return null;
+}
+
 String _normalizeHouseholdName(String value) {
   return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+}
+
+String _normalizeProfileName(String value) {
+  return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+}
+
+List<UserProfile> _transferCandidates(
+  List<UserProfile> members, {
+  required Household? household,
+}) {
+  if (household == null) {
+    return const [];
+  }
+
+  final candidates = members
+      .where(
+        (member) =>
+            member.id != household.ownerId &&
+            member.householdId == household.id,
+      )
+      .toList();
+  candidates.sort(
+    (a, b) => _memberDisplayName(
+      a,
+    ).toLowerCase().compareTo(_memberDisplayName(b).toLowerCase()),
+  );
+  return candidates;
+}
+
+UserProfile? _selectedMember(List<UserProfile> members, String? memberId) {
+  if (memberId == null) {
+    return null;
+  }
+  for (final member in members) {
+    if (member.id == memberId) {
+      return member;
+    }
+  }
+  return null;
+}
+
+String _memberDisplayName(UserProfile member) {
+  final fullName = member.fullName.trim();
+  if (fullName.isNotEmpty) {
+    return fullName;
+  }
+
+  final email = member.email.trim();
+  if (email.isNotEmpty) {
+    return email;
+  }
+
+  return 'Thành viên';
+}
+
+void _refreshHouseholdProviders(WidgetRef ref, String householdId) {
+  ref.invalidate(householdProfilesStreamProvider(householdId));
+  ref.invalidate(profilesByIdProvider(householdId));
+  ref.invalidate(categoriesStreamProvider(householdId));
+  ref.invalidate(transactionsStreamProvider(householdId));
 }
 
 String _roleLabel(UserProfileRole? role) {

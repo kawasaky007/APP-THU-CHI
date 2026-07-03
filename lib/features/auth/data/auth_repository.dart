@@ -192,6 +192,53 @@ class AuthRepository {
     });
   }
 
+  Future<AuthSessionData> transferCurrentHouseholdOwnership({
+    required String newOwnerId,
+  }) {
+    return _guard('Chuyển quyền chủ household', () async {
+      final user = _requireCurrentUser();
+      final profile = await _getOrCreateProfileForUser(user);
+      final householdId = profile.householdId;
+
+      if (householdId == null || householdId.isEmpty) {
+        throw const AuthRepositoryException(
+          message: 'Bạn chưa tham gia household nào.',
+          actionName: 'Chuyển quyền chủ household',
+        );
+      }
+
+      final household = await _householdRepository.getById(householdId);
+      if (household == null) {
+        throw const AuthRepositoryException(
+          message: 'Không tìm thấy household hiện tại.',
+          actionName: 'Chuyển quyền chủ household',
+        );
+      }
+
+      if (household.ownerId != user.id) {
+        throw const AuthRepositoryException(
+          message: 'Chỉ chủ household hiện tại mới có quyền chuyển quyền.',
+          actionName: 'Chuyển quyền chủ household',
+        );
+      }
+
+      final updatedHousehold = await _householdRepository.transferOwnership(
+        household: household,
+        currentOwnerProfile: profile,
+        newOwnerId: newOwnerId,
+      );
+
+      return AuthSessionData(
+        user: user,
+        profile: _profileWithHouseholdRole(
+          profile: profile,
+          household: updatedHousehold,
+        ),
+        household: updatedHousehold,
+      );
+    });
+  }
+
   Future<AuthSessionData> leaveCurrentHousehold() {
     return _guard('Thoát household', () async {
       final user = _requireCurrentUser();
@@ -475,14 +522,14 @@ String _resolveFullName({
     return cleanExplicitName;
   }
 
-  final metadataName = user.userMetadata?['full_name']?.toString().trim();
-  if (metadataName != null && metadataName.isNotEmpty) {
-    return metadataName;
-  }
-
   final cleanFallbackName = fallbackFullName?.trim();
   if (cleanFallbackName != null && cleanFallbackName.isNotEmpty) {
     return cleanFallbackName;
+  }
+
+  final metadataName = user.userMetadata?['full_name']?.toString().trim();
+  if (metadataName != null && metadataName.isNotEmpty) {
+    return metadataName;
   }
 
   final email = user.email;

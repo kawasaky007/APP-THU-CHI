@@ -62,9 +62,11 @@ class TransactionRepository {
           );
           final transactions = deduplicatedRows
               .map(Transaction.fromJson)
-              .where((t) =>
-                  !t.transactionDate.isBefore(start) &&
-                  t.transactionDate.isBefore(end))
+              .where(
+                (t) =>
+                    !t.transactionDate.isBefore(start) &&
+                    t.transactionDate.isBefore(end),
+              )
               .toList();
           transactions.sort(_compareTransaction);
           debugPrint(
@@ -120,12 +122,17 @@ class TransactionRepository {
     return _guard('Tạo giao dịch', () async {
       _validateAmount(amount);
       _validateCategory(category, householdId);
+      final cleanUserId = _normalizeId(userId, fieldName: 'người thực hiện');
+      await _validateHouseholdMember(
+        householdId: householdId,
+        userId: cleanUserId,
+      );
 
       final now = DateTime.now().toUtc();
       final draft = Transaction(
         id: _uuid.v4(),
         householdId: householdId,
-        userId: userId,
+        userId: cleanUserId,
         categoryId: category.id,
         type: category.type,
         amount: amount,
@@ -156,6 +163,7 @@ class TransactionRepository {
 
   Future<Transaction> updateTransaction({
     required Transaction transaction,
+    required String userId,
     required Category category,
     required double amount,
     required DateTime transactionDate,
@@ -164,8 +172,14 @@ class TransactionRepository {
     return _guard('Cập nhật giao dịch', () async {
       _validateAmount(amount);
       _validateCategory(category, transaction.householdId);
+      final cleanUserId = _normalizeId(userId, fieldName: 'người thực hiện');
+      await _validateHouseholdMember(
+        householdId: transaction.householdId,
+        userId: cleanUserId,
+      );
 
       final payload = {
+        'user_id': cleanUserId,
         'category_id': category.id,
         'type': category.type.value,
         'amount': amount,
@@ -281,6 +295,25 @@ class TransactionRepository {
       cause: error,
       stackTrace: stackTrace,
     );
+  }
+
+  Future<void> _validateHouseholdMember({
+    required String householdId,
+    required String userId,
+  }) async {
+    final row = await _client
+        .from(SupabaseTables.userProfiles)
+        .select('id, household_id')
+        .eq('id', userId)
+        .eq('household_id', householdId)
+        .maybeSingle();
+
+    if (row == null) {
+      throw const TransactionRepositoryException(
+        message: 'Người thực hiện không thuộc household hiện tại.',
+        actionName: 'Kiểm tra giao dịch',
+      );
+    }
   }
 }
 

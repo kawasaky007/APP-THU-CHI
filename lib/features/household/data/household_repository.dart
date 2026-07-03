@@ -63,6 +63,67 @@ class HouseholdRepository {
     });
   }
 
+  Future<Household> transferOwnership({
+    required Household household,
+    required UserProfile currentOwnerProfile,
+    required String newOwnerId,
+  }) {
+    return _guard('Chuyển quyền chủ household', () async {
+      final cleanNewOwnerId = newOwnerId.trim();
+      if (cleanNewOwnerId.isEmpty) {
+        throw const HouseholdRepositoryException(
+          message: 'Vui lòng chọn chủ household mới.',
+          actionName: 'Chuyển quyền chủ household',
+        );
+      }
+      if (household.ownerId != currentOwnerProfile.id) {
+        throw const HouseholdRepositoryException(
+          message: 'Chỉ chủ household hiện tại mới có quyền chuyển quyền.',
+          actionName: 'Chuyển quyền chủ household',
+        );
+      }
+      if (cleanNewOwnerId == currentOwnerProfile.id) {
+        throw const HouseholdRepositoryException(
+          message: 'Không thể chuyển quyền cho chính bạn.',
+          actionName: 'Chuyển quyền chủ household',
+        );
+      }
+
+      final memberRow = await _client
+          .from(SupabaseTables.userProfiles)
+          .select('id, household_id')
+          .eq('id', cleanNewOwnerId)
+          .eq('household_id', household.id)
+          .maybeSingle();
+
+      if (memberRow == null) {
+        throw const HouseholdRepositoryException(
+          message: 'Thành viên được chọn không còn thuộc household hiện tại.',
+          actionName: 'Chuyển quyền chủ household',
+        );
+      }
+
+      final now = DateTime.now().toUtc().toIso8601String();
+      final row = await _client
+          .from(SupabaseTables.households)
+          .update({'owner_id': cleanNewOwnerId, 'updated_at': now})
+          .eq('id', household.id)
+          .eq('owner_id', currentOwnerProfile.id)
+          .select();
+
+      return Household.fromJson(
+        _requireSingleJsonMap(
+          row,
+          actionName: 'Chuyển quyền chủ household',
+          emptyMessage:
+              'Không thể chuyển quyền. Household không tồn tại hoặc quyền đã thay đổi.',
+          multipleMessage:
+              'Dữ liệu household bị trùng khi chuyển quyền. Vui lòng kiểm tra database.',
+        ),
+      );
+    });
+  }
+
   Future<HouseholdMembership> createHouseholdForProfile({
     required UserProfile profile,
     required String name,
